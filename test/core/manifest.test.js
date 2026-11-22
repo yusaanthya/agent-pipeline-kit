@@ -31,12 +31,10 @@ const valid = () => ({
 
 const change = (fn) => { const m = valid(); fn(m); return m; };
 
-test('the schema example of the design is valid', () => {
-  const design = readFileSync(new URL('../../docs/design.md', import.meta.url), 'utf8');
-  const blocks = [...design.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
-  const block = blocks.find((b) => b.includes('"schema": 1'));
-  assert.ok(block, 'the design has a manifest example');
-  const result = parseManifest(block);
+const readExample = () => readFileSync(new URL('../../examples/manifest.json', import.meta.url), 'utf8');
+
+test('the example manifest is valid', () => {
+  const result = parseManifest(readExample());
   assert.deepEqual(result.ok === false ? result.errors : [], []);
   assert.equal(result.ok, true);
 });
@@ -263,10 +261,8 @@ test('content_rules is not accepted below the top level', () => {
   assert.equal(parse(change((m) => { m.lanes.runner.content_rules = {}; })).ok, false);
 });
 
-test('M8: the example block of the design carries all four rule types and is valid', () => {
-  const design = readFileSync(new URL('../../docs/design.md', import.meta.url), 'utf8');
-  const blocks = [...design.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
-  const example = JSON.parse(blocks.find((b) => b.includes('"schema": 1')));
+test('M8: the example manifest contains all four rule types and is valid', () => {
+  const example = JSON.parse(readExample());
   assert.deepEqual(Object.keys(example.content_rules).sort(), ['front_matter_only', 'hold_on_add_delete', 'hold_on_line_change', 'keys_only']);
   const result = parse(example);
   assert.deepEqual(result.ok === false ? result.errors : [], []);

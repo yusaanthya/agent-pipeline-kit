@@ -1,201 +1,46 @@
 # agent-pipeline-kit
 
-One merge gate for unattended coding-agent pipelines that run on GitHub.
+A command-line merge gate for coding-agent pipelines on GitHub. It evaluates a pull request against repository policy, GitHub Actions checks, and Codex review evidence for the PR head. Use it before a merge or to audit merged pull requests.
 
-A solo developer runs unattended agent sessions in several repositories: a
-night runner picks queued work, opens pull requests, fixes review findings and
-merges a pull request when it is safe to. Before this kit, each repository
-wrote its merge decision its own way: two as prose in a runner specification
-that the agent reads and judges, one as a bash script that the agent itself
-decides whether to call. This kit replaces those three with one tested
-program, the **gate**: a pure function that returns a verdict for a pull
-request, called at the moment of the merge, and replayed the next day to
-check every merge that happened.
+## Run the gate
 
-## Stance: a guardrail with detection, not a boundary
+Use Node.js 22 or newer, Git, and an authenticated GitHub CLI (`gh`) with read access to the target repository. Use a trusted local clone of the target repository with `origin` pointing to that same repository and enough history to resolve the relevant commits. There are no npm dependencies to install.
 
-Read this before anything else.
+Run from the kit checkout and replace the repository, PR number, clone path, and dates with your own values. These commands assume a configured queue lane targeting `preview`. For live evaluation, pick an open PR with a `claude/item-<id>` head. For replay, pick a merged PR.
 
-- The agent acts on GitHub as the owner. Its pull requests, merges and
-  settings changes carry the owner's identity, so GitHub cannot tell the agent
-  from the owner. An approval label, the draft flag or a comment are all
-  writable by the agent in one call.
-- On GitHub's free plan, private repositories have no rulesets or branch
-  protection. Nothing on GitHub stops a direct push to their default branch.
-  Public repositories can have rulesets, but an administrator, which the agent
-  is, can turn one off with one call.
-- So the gate cannot be a boundary the agent is unable to cross. It is a
-  guardrail: it makes the merge decision deterministic, tested and identical
-  across repositories, runs it where the merge call is made, and a morning
-  replay detects merges that should not have happened. The design names every
-  known way around it ([threat model](docs/threat-model.md)).
-- What would make it a boundary (a separate GitHub identity for the agent) is
-  listed as an optional upgrade, deferred and not built.
-
-## How the pieces fit
-
-**Where the merge decision is made today:**
-
-```mermaid
-flowchart TD
-  subgraph MR["Multi-repo maintenance routine"]
-    direction TB
-    h1["Procedure text classifies the PR"] --> h2["Agent decides whether to call<br/>a bash gate script"] --> h3["Agent merges"]
-  end
-  subgraph GR["Game repo runner, merges into a preview branch"]
-    direction TB
-    i1["Prose merge conditions in the runner spec<br/>the agent judges them"] --> i3["Agent merges"]
-  end
-  subgraph QR["quorum-election-simulator runner"]
-    direction TB
-    q1["Prose merge conditions in the runner spec<br/>the agent judges them"] --> q3["Agent merges"]
-  end
+```sh
+node src/cli.js evaluate --repo OWNER/REPO --pr 123 --repo-dir /path/to/repo
+node src/cli.js replay --repo OWNER/REPO --pr 122 --repo-dir /path/to/repo
+node src/cli.js backtest --repo OWNER/REPO --repo-dir /path/to/repo --since 2026-11-01 --until 2026-11-08 --base preview
+npm test
 ```
 
-**With the kit:**
+- `evaluate` checks a live PR. Pass `--lane` for a caller lane. A configured queue lane is inferred from a `claude/item-<id>` head branch.
+- `replay` reconstructs a verdict for one merged PR. A caller lane is inferred from an exact `Auto-Merged-By:` line in the merge commit message that identifies one configured caller lane.
+- `backtest` runs replay for PRs merged from `--since` inclusive to `--until` exclusive. The optional `--base` filters by target branch. It emits one JSON line per PR and a final summary. `anomalies` lists marked merges with a verdict other than `merge`, and `unmarkedNotMerge` lists such verdicts on unmarked merges. PRs whose evidence collection failed appear in both lists because their marker is unknown.
 
-```mermaid
-flowchart TD
-  call["Any session wants to merge"] --> gate{"gate<br/>one tested program"}
-  gate -->|"merge"| pass["Normal permission handling<br/>and classifier still apply"] --> done["Merge as the owner<br/>deploys fire as today"]
-  gate -->|"hold"| hold["Runner: denied, left for the owner<br/>Interactive: ask the owner"]
-  gate -->|"fix / update / wait / blocked"| deny["Runner: denied with the reason<br/>Interactive: ask recommended, not decided"]
-  how["Who runs the gate<br/>single-repo session: PreToolUse hook<br/>multi-repo session and Codex: procedure call"] -.-> gate
-```
+`evaluate` and `replay` emit a JSON object and exit `0` for `merge` or `1` for any other verdict. `backtest` exits `0` after producing a summary even if it found anomalies, so inspect the JSON. It exits `1` if collecting the PR list fails. Invalid arguments exit `2`.
 
-When the verdict is `merge`, the hook returns no decision at all, so the
-session's ordinary permission rules and its auto-mode classifier still apply.
-The merge is still made with the owner's identity, so push-triggered workflows
-and deploys behave as they do today.
+## Configure policy
 
-**Three paths share the gate:** the unattended night runner (the only one that
-is a lane in the design's sense), a local strong-model review loop that the
-owner starts, and the owner's own convergence from a cloud or local session,
-where the owner's confirmation decides a hold.
+Copy the example manifest and set `kit` to the kit checkout’s 40-character commit SHA. Replace `check` with the exact GitHub Actions check-run name and adapt the base branch, freeze rule, and paths to your repository. Commit it as `.agent-line/manifest.json` on the target repository’s default branch. The gate reads that file from the fetched default branch even when the PR targets another branch. [Example manifest](examples/manifest.json)
 
-```mermaid
-flowchart TD
-  q["Queue item<br/>enters only through an owner-merged PR"] --> r["Night runner<br/>claims, implements, runs its own critic"]
-  r --> pr["PR"]
-  pr --> ci["CI and native Codex review<br/>on GitHub"]
-  ci --> g{"gate"}
-  g -->|"fix: go back and fix"| r
-  g -->|"merge"| m["Merged"]
-  g -->|"hold: strong review"| s["Local strong-model review<br/>review loop started by the owner"]
-  g -->|"hold: owner"| o["Owner<br/>cloud or local session"]
-  r -->|"round cap, or 6 h without progress"| d["Parked<br/>one question and a recommended answer"]
-  d --> o
-  s -->|"review passes (the owner starting the loop is the confirmation); the gate runs again before the merge"| m
-  o -->|"owner confirms; also through the gate"| m
-  m --> desk["Morning desk<br/>replays the gate the next day"]
-  desk -.->|"anomalies and to-do lists"| o
-```
+The CLI validates the `kit` field’s format. Pin the kit checkout separately for reproducible runs. `checks: "none"` requires an owner decision. `codex_clean: "no_findings"` requires a review with no findings, while `"no_blocking"` allows advisory findings. Built-in holds cover changes such as GitHub workflow files, agent configuration, and dependency manifests. Path rules match case-insensitively. `*` matches within one path segment and a `**` segment matches zero or more segments. Extra path and content holds are configurable. [Manifest validation](src/core/manifest.js)
 
-**States a pull request goes through.** Each main transition corresponds to
-one verdict class (`update:base` and `blocked` are not drawn):
+A queue lane reads `.agent-line/queue/<id>.md` from the evaluated base commit. A missing item, unreadable front matter, or `merge: owner` in the item holds the PR for the owner. For a workflow without queue branches, configure a lane with `"kind": "caller"` and pass its name with `--lane` when running `evaluate`.
 
-```mermaid
-stateDiagram-v2
-  state "Open" as Open
-  state "Waiting" as Waiting
-  state "Fixing" as Fixing
-  state "Awaiting strong review" as Strong
-  state "Awaiting owner" as Owner
-  state "Merged" as Merged
-  state "Closed" as Closed
-  [*] --> Open
-  Open --> Waiting: CI or Codex not finished
-  Waiting --> Open: results arrive
-  Open --> Fixing: fix - CI failed or Codex P0 or P1
-  Fixing --> Open: runner pushes a fix
-  Fixing --> Owner: round cap, or 6 h without progress
-  Open --> Strong: hold - strong review
-  Strong --> Merged: local review passes and the owner has started the loop
-  Strong --> Strong: review worker pushes a fix, re-review
-  Open --> Owner: hold - owner, FAILED prefix, or draft
-  Owner --> Merged: owner confirms
-  Owner --> Closed: owner rejects
-  Open --> Merged: merge - auto tier
-  Merged --> [*]
-  Closed --> [*]
-```
+All three commands accept `--manifest FILE`, which takes precedence over the policy in Git. Treat the file as trusted policy and keep it under operator control, outside the PR checkout. In `replay`, pass a separately verified copy of the policy in effect at merge time when available. In `backtest`, the same supplied file applies to every PR, so use it to evaluate a proposed policy or a window with one verified policy version. By default, replay selects a manifest from the current default branch’s first-parent history using commit timestamps as an approximation.
 
-**What is shared and what stays in each repository:**
+## Interpret results and adopt the gate
 
-```mermaid
-flowchart TD
-  subgraph KIT["agent-pipeline-kit, public, one copy"]
-    k["Gate library and tests<br/>hook script<br/>generic runner procedure<br/>queue and report formats, templates"]
-  end
-  subgraph REPO["Each consumer repository keeps only"]
-    m1["manifest<br/>pins a kit commit"]
-    m2["rules.md<br/>this repository's own rules"]
-    m3["hook settings and bootstrap"]
-    m4["queue and reports"]
-  end
-  subgraph RUN["When a scheduled task runs"]
-    rd["Read the manifest"] --> ft["Fetch the kit at the pinned commit"] --> go["Follow the generic procedure plus rules.md"]
-  end
-  k -.->|"referenced by commit SHA"| m1
-  m1 --> rd
-  m2 --> go
-  m3 -->|"runs the gate on a merge call"| go
-  go -->|"writes"| m4
-```
+A live `merge` verdict includes the expected head SHA and the suggested squash commit message. If you integrate it into a runner, evaluate immediately before merging and require the merge operation to match that head SHA. Handle `hold:*` as an escalation, `wait:*` as pending, `fix:*` as failed checks or review, `update:base` as a stale base, and `blocked:*` as a stop. Use `reasons` for the details. Start with manual evaluation and backtests to see how the policy behaves on your repository.
 
-The kit is public because a cloud session that has one repository attached can
-fetch only public repositories anonymously, and attaching the kit as a second
-repository would switch that session's repository hooks off. The kit holds no
-secrets and needs none.
+The CLI queries GitHub and fetches Git objects into temporary local refs. The fetch writes to the clone’s object store. The CLI leaves the worktree untouched, reads PR contents as Git objects, and performs no GitHub writes. Merge execution, scheduling, hooks, and enforcement belong to the caller or repository configuration. Anyone with sufficient repository permissions can bypass the gate or change its inputs. A merge marker is a convention for auditing and lane selection. GitHub permissions and branch controls govern enforcement.
 
-## Status: Phase 1
+Cloud hook behavior remains unverified. The Phase 0 probe has passed local syntax and dry-run checks and has yet to run in a cloud session. [Phase 0 probe](probes/phase0/README.md)
 
-| Piece | State |
-| --- | --- |
-| Design, threat model, decisions, open questions, platform facts, implementation plan, research note | Written (this directory's `docs/`) |
-| Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the design](docs/design.md); tests in `test/core/` |
-| Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners, plus a smoke test of `evaluate` against real `git` with a local bare remote (`test/smoke/`) |
-| Content rules in the manifest (slice 2) | Implemented in `src/core/content.js`, evaluated by the verdict function; the collector reads the blobs; specified in [the design](docs/design.md#541-content-rules) |
-| The path check without a pull request, and the hook's reading of the same policy | Specified in [the design](docs/design.md); slices 3 and 4 of [the implementation plan](docs/implementation-plan.md); not implemented |
-| PreToolUse hook adapter and bootstrap | Specified in [the design](docs/design.md) only; a later slice |
-| Phase 0 hook checks | A reviewed kit in `probes/phase0/`; never run |
-| Manifest file format, `rules.md` and onboarding templates | Specified in the design; the on-disk format is an [open question](docs/open-questions.md); a later slice |
-| Generic runner procedure | Not specified here yet; a later slice |
-
-No consumer repository calls the kit yet. Phase 1 ends with a backtest of the
-gate against merged pull requests of the consumers and a daily replay; the
-gate does not intervene in any merge during Phase 1.
-
-## Layout
-
-```text
-README.md                    this file
-LICENSE                      MIT
-docs/design.md               canonical design: verdicts, inputs, trust, invocation, replay
-docs/threat-model.md         threats, what is and is not protected, residual gaps
-docs/decisions.md            dated owner decisions and rejected designs
-docs/open-questions.md       unsettled items, kit-level or per-repository
-docs/platform-facts.md       platform behaviour the design depends on, with verification status
-docs/implementation-plan.md  CLI contract, mapping from the legacy gate scripts, later slices (not built)
-docs/research/               outside practice behind the path, signal and extension design
-probes/phase0/               reviewed, never-run kit for the hook checks of design section 8.5
-```
-
-```text
-package.json                 type module, no dependencies; `npm test` runs `node --test`
-src/core/                    pure: verdict function, Codex parser, path patterns, manifest
-src/collect/                 adapters: process runner, `gh api` reads, git reads, input collector
-src/cli.js                   evaluate | replay | backtest
-test/                        table-driven tests, fixtures, shared test builders (test/support)
-.github/workflows/ci.yml     `node --test` on pull requests and pushes to main
-```
-
-Node.js 22, ESM, no runtime or development dependencies, tests with
-`node:test`. Run the tests with `node --test`. The CLI needs `git` and an
-authenticated `gh`, and a local clone of the consumer to fetch into (it never
-checks anything out); see the usage lines in the
-[implementation plan](docs/implementation-plan.md#5-cli-contract).
+Historical results are best-effort. Replay needs the PR head and a reachable merge commit and uses the merge commit’s first parent as the historical base. It cannot reliably recover every historical fact, such as when a halt label was applied, whether a freeze PR was retargeted, or what an edited review said at merge time. Inspect `limits` alongside each verdict. Backtest enumerates merged PRs, so use a separate audit if you also need to detect direct branch pushes.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)

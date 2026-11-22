@@ -1,5 +1,5 @@
-// git reads (design 4). Arguments are arrays; nothing
-// here checks out, merges, resets, pushes or executes pull request content.
+// Git reads use argument arrays. These operations leave the checkout and refs
+// untouched and never execute pull request content.
 import { parseNumstat, parseRawDiff } from './parse.js';
 
 const SHA = /^[0-9a-f]{40}$/;

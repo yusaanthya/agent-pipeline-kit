@@ -1,4 +1,4 @@
-// Path patterns (design 5.4, "Pattern syntax"). Segments are separated by `/`.
+// Path patterns. Segments are separated by `/`.
 // A segment `**` matches zero or more whole segments; `*` inside a segment
 // matches any characters except `/`; every other character is literal.
 // Matching is case-insensitive: both sides are lowercased.

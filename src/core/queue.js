@@ -1,4 +1,4 @@
-// Front matter of a queue item (design 5.3): read one key, `merge`.
+// Reads the `merge` key from a queue item's front matter.
 
 /**
  * @param {string} text

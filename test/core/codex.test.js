@@ -224,7 +224,7 @@ for (const row of [
   });
 }
 
-// codexReason: every cell of the design's mapping table.
+// Reason mapping for both `codex_clean` modes.
 const st = (state, code = null, extra = {}) => ({
   state, code, hasAnyFindings: null, hasUnresolvedFindings: null, securityReview: null, editedAfterAsOf: false, ...extra,
 });

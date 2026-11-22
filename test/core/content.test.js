@@ -6,7 +6,7 @@ import {
 import { CONTENT_MAX_BYTES } from '../../src/core/constants.js';
 import { baselineManifest, file, addedFile } from '../support/baseline.js';
 
-// L1: splitLines (design 5.4.1, "Lines").
+// L1: splitLines.
 const splitRows = [
   { name: 'two lines, no final newline', text: 'a\nb', expected: ['a', 'b'] },
   { name: 'a final newline adds no phantom line', text: 'a\nb\n', expected: ['a', 'b'] },
