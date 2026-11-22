@@ -864,11 +864,16 @@ src/core/writeguard.js   writeDecision({manifest, laneName, itemId, path, op}) -
 test/core/writeguard.test.js
 ```
 
-`writeDecision` denies when `laneName` is a runner lane (the hook passes it
-from `PIPELINE_LANE`) and `path` matches one of the `writeTimeDeny` patterns of
+`writeDecision` denies when `laneName` is set (the hook passes the value of
+`PIPELINE_LANE`; a set, non-empty value is runner mode whether or not it names
+a queue lane of the manifest, because the write-time patterns come from the
+floor and need no lane) and `path` matches one of the `writeTimeDeny` patterns of
 a floor category (design 5.4), never merely a pattern of the category, except `.agent-line/reports/<itemId>.md`
-for `op: 'write'` and `op: 'create'`. Any other path, any other lane, and an
-interactive session (no lane) give `none`. It reads no list of its own.
+for `op: 'write'` and `op: 'create'`. Any other path, and an interactive
+session (`laneName` undefined or empty), give `none`. The own-report exemption
+applies only when `laneName` names a queue lane of the manifest and `itemId`
+is in the queue-id form; otherwise the report path is denied like the rest of
+`.agent-line/**`. It reads no list of its own.
 
 | # | Case | Expected |
 | --- | --- | --- |
@@ -878,7 +883,8 @@ interactive session (no lane) give `none`. It reads no list of its own.
 | W4 | `.claude/settings.json`, `a/.claude/hooks/x` | deny |
 | W5 | `package.json`, `CLAUDE.md`, `docs/agents-notes.md`, `.codex/config`, `.husky/pre-commit` (floor patterns that are not write-time) | none |
 | W6 | a `hold_paths` entry; a path outside the allowlist | none |
-| W7 | no lane, an unknown lane | none |
+| W7 | no lane (undefined or empty) | none |
+| W7a | a lane name the manifest does not have, a caller-kind lane name, or a manifest that failed to parse: W1, W2 and W4 paths; the item's own report | deny; deny |
 | W8 | the set of write-time patterns equals the write-time column of the design's table (a test reads the table), and each is one of its category's `patterns` | equal; subset |
 | W9 | every floor category's `classes` lists are non-empty and each pattern has at least one of authority, execution, oracle | holds |
 

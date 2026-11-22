@@ -787,12 +787,17 @@ Decisions the hook returns:
 - `merge`: no decision. Returning `allow` would skip the classifier and would
   cover the whole Bash string; returning nothing keeps ordinary permission
   handling.
-- With `PIPELINE_LANE=runner` in the environment (set on the runner task's
+- With `PIPELINE_LANE` set in the environment (on the runner task's
   dedicated cloud environment, outside the repository): deny every other
-  verdict, with the reason.
+  verdict, with the reason. The value is the manifest's name for the queue
+  lane, `runner` in the example manifest. Runner mode is "the variable is
+  set and not empty", not "the value names a known lane": a value that names
+  no queue lane of the manifest, or a manifest that cannot be read, still
+  denies, with reason `unknown-lane`, so a mismatch between the environment
+  and the manifest cannot switch the hook off.
 - Otherwise: `ask` for `hold:*`; for `fix`, `update`, `wait` and `blocked`,
   the decision is open question 4 (recommended: `ask`).
-- In the runner lane, the hook also denies writes and pushes whose target is
+- In runner mode, the hook also denies writes and pushes whose target is
   in the write-time column of the floor table (section 5.4): the workflow
   directory `.github/**`, `.agent-line/**` other than the item's own report,
   and `**/.claude/**`. It reads the floor and the manifest, so it has no
