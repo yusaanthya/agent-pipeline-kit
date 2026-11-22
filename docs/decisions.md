@@ -202,7 +202,9 @@ The path policy protects what a check result on the head means and what lands
 on the base branch. It does not protect against code that runs before the
 merge. A same-repository `pull_request` run executes the branch's own workflow
 file, receives the repository's secrets and may raise its token permissions in
-that file (documented; research note), so holding `.github/**` at merge time
+that file (the permissions part is documented; the secrets part follows from
+GitHub's documented exception for forks and is not separately tested; research
+note), so holding `.github/**` at merge time
 cannot protect secrets. The structural answers are:
 
 - deploy secrets live in an environment limited to the production branch. This

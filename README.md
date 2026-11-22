@@ -68,9 +68,10 @@ session's ordinary permission rules and its auto-mode classifier still apply.
 The merge is still made with the owner's identity, so push-triggered workflows
 and deploys behave as they do today.
 
-**Three lanes share the gate:** the unattended night runner, a local
-strong-model review loop that the owner starts, and the owner's own
-convergence from a cloud or local session.
+**Three paths share the gate:** the unattended night runner (the only one that
+is a lane in the design's sense), a local strong-model review loop that the
+owner starts, and the owner's own convergence from a cloud or local session,
+where the owner's confirmation decides a hold.
 
 ```mermaid
 flowchart TD

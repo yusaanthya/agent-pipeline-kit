@@ -150,17 +150,27 @@ Each of these is accepted and named; none is closed by the kit.
     scheduled tasks are a research preview.
 11. **Pre-merge execution** (TA/TB): a `pull_request` run from the same
     repository executes the branch's workflow file, receives the repository's
-    secrets and can raise its token permissions in that file (documented). A
-    hold at merge time cannot undo a run that has already happened. The
+    secrets (this follows from GitHub's documented exception for forks, "With
+    the exception of `GITHUB_TOKEN`, secrets are not passed to the runner when
+    a workflow is triggered from a forked repository"; the same-repository
+    case is not separately tested) and can raise its token permissions in that
+    file (documented). A hold at merge time cannot undo a run that has already happened. The
     structural answers are a deploy-secret environment limited to the
     production branch (a consumer setting, available on public repositories
     only) and the hook's write and push deny for the workflow directory on the
-    runner lane, which is subject to residual 1. Whether the runner's
+    runner lane, which is subject to residual 1 and is only as good as the
+    hook's ability to enumerate what a call writes: Bash can write files and
+    push with no per-path tool call, so the hook must diff the pushed range
+    against the remote ref and deny when it cannot (open question 32). Whether
+    the runner's
     credential can already not write workflow files is open question 26.
 12. **Content rules are structural** (TA): they see added or removed lines, top
     level keys and front matter blocks, not meaning. A pure move of a guarded
     line, a new value of a key the rule names, and any change to a file's body
     are not changes they hold. They apply only to the globs a consumer lists.
+    "Well-formed" means the kit's own grammar, not YAML: a value that YAML
+    would reject, or an anchor or alias, passes if the grammar accepts the block
+    and the key is named or its block is unchanged. Recorded, not fixed.
 
 ## Detection limits
 

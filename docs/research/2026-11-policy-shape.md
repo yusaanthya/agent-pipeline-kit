@@ -119,9 +119,12 @@ the pull request's merge commit, and a workflow file may grant itself
   the workflow, or within specific jobs." and "checks: write permits an action
   to create a check run." <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax>.
 
-A critic also read the events and permissions documentation for the further
-claim that a same-repository `pull_request` run receives the repository's
-secrets; it has not been exercised in a live probe (**I**).
+GitHub's secrets documentation says "With the exception of `GITHUB_TOKEN`,
+secrets are not passed to the runner when a workflow is triggered from a
+forked repository" (**S**):
+<https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions>.
+That a same-repository `pull_request` run does receive the repository's
+secrets follows from the fork exception; it has not been tested (**I**).
 
 **Conclusion (I).** Practice keeps a small list defined by what a file can do
 (change the agent's authority, execute with credentials, define the oracle that

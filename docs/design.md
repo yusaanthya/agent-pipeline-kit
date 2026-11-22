@@ -130,7 +130,7 @@ can contribute to a `merge` verdict or is used only to stop one.
 | Pull request facts: number, state, head repository, head branch, head SHA, base branch, `mergeable` | GitHub REST | Grants: origin and lane are derived from them |
 | Caller lane | Argument of a procedure call (section 8.2) | Selects a lane; supplied by the calling session (see the threat model) |
 | Changed files with status, base and head modes, NUL check of head blobs, added and deleted line counts | git objects: `git diff --raw -z --no-renames` and `--numstat` between the merge base and the head; `git cat-file` | Grants: facts about the change itself |
-| Contents of changed files that a content rule matches | git objects: `git cat-file blob` of the merge-base side and the head side of each changed path that matches a glob of `content_rules` (section 5.4.1) | Stop only: a content rule can only add a hold |
+| Contents of changed files that a content rule matches | git objects: `git cat-file blob` of the merge-base side and the head side of each changed regular-file path that matches a glob of `hold_on_line_change`, `keys_only` or `front_matter_only` (section 5.4.1); `hold_on_add_delete` reads no contents | Stop only: a content rule can only add a hold |
 | Base tip SHA and whether it is an ancestor of the head | Fresh fetch of the pull request's base branch (which must be the lane's base); `git merge-base` | Grants |
 | Queue item text, `.agent-line/queue/<id>.md` | git object at the base tip | Grants (queue paths are floor paths, so only owner-merged pull requests put items there) |
 | Check runs on the head SHA | GitHub REST, all runs, all pages | Grants, only check runs created by the GitHub Actions app with a name the manifest lists |
@@ -207,7 +207,7 @@ Resolution, failing closed:
   consumers' rollout cells that switch runner merging on or off.
 
 Interactive self-merge through the gate (a lane for pull requests that match
-no other lane) is a follow-up; no consumer has chosen it yet.
+no other lane) is not built (decision 2026-11-22); section 11 says why.
 
 ### 5.3 Queue item
 
@@ -260,7 +260,7 @@ Per pull request:
 
 **Floor** (hard-coded; a manifest can add paths through `hold_paths` but
 cannot remove any). Each category has an id, which the path check reports
-(section 8.6), and the class of harm it guards against:
+(section 8.6). Each pattern carries the classes of harm it guards against:
 
 - **authority**: what the next run obeys (agent instructions and settings, the
   pipeline's queue, rules and manifest);
@@ -268,14 +268,22 @@ cannot remove any). Each category has an id, which the path check reports
   pull, an install, a commit or a workflow run;
 - **oracle**: what decides whether a check passes (workflow definitions).
 
-| Id | Category | Patterns | Class | Write-time deny (section 8.1) |
-| --- | --- | --- | --- | --- |
-| `ci-pipeline` | CI and pipeline | `.github/**`, `.agent-line/**` | execution and oracle (`.github/**`); authority (`.agent-line/**`) | `.github/**`, and `.agent-line/**` except the item's own report |
-| `agent-config` | Agent configuration | `**/.claude/**`, `**/.codex/**`, `**/.agents/**`, `**/claude*.md`, `**/agents*.md`, `**/.mcp.json` | authority; execution for local hooks | `**/.claude/**` |
-| `local-exec` | Editor, shell and git hooks | `**/.vscode/**`, `**/.idea/**`, `**/.envrc`, `**/.husky/**`, `**/.githooks/**`, `**/git-hooks/**` | execution | none |
-| `git-attributes` | git attributes | `**/.gitattributes`, `**/.gitmodules` | execution | none |
-| `package-config` | Package manager configuration | `**/.npmrc`, `**/.yarnrc`, `**/.yarnrc.yml` | execution | none |
-| `dependencies` | Dependency manifests and lockfiles | `**/package.json`, `**/package-lock.json`, `**/npm-shrinkwrap.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/pnpm-workspace.yaml`, `**/bun.lock`, `**/bun.lockb`, `**/go.mod`, `**/go.sum`, `**/go.work`, `**/go.work.sum`, `**/cargo.toml`, `**/cargo.lock`, `**/pyproject.toml`, `**/poetry.lock`, `**/pipfile`, `**/pipfile.lock`, `**/uv.lock`, `**/requirements*.txt`, `**/gemfile`, `**/gemfile.lock` | execution | none |
+The last column lists the patterns of the category that the hook denies at
+write time (section 8.1). It is a subset of the category's patterns, possibly
+empty, so a category can have patterns that are held at merge but not denied at
+write time.
+
+| Id | Category | Patterns (classes) | Write-time deny |
+| --- | --- | --- | --- |
+| `ci-pipeline` | CI and pipeline | `.github/**` (execution, oracle); `.agent-line/**` (authority) | `.github/**`, `.agent-line/**` (the second except the item's own report) |
+| `agent-config` | Agent configuration | `**/.claude/**`, `**/.codex/**`, `**/.mcp.json` (authority, execution); `**/.agents/**`, `**/claude*.md`, `**/agents*.md` (authority) | `**/.claude/**` |
+| `local-exec` | Editor, shell and git hooks | `**/.vscode/**`, `**/.idea/**`, `**/.envrc`, `**/.husky/**`, `**/.githooks/**`, `**/git-hooks/**` (execution) | none |
+| `git-attributes` | git attributes | `**/.gitattributes`, `**/.gitmodules` (execution) | none |
+| `package-config` | Package manager configuration | `**/.npmrc`, `**/.yarnrc`, `**/.yarnrc.yml` (execution) | none |
+| `dependencies` | Dependency manifests and lockfiles | `**/package.json`, `**/package-lock.json`, `**/npm-shrinkwrap.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/pnpm-workspace.yaml`, `**/bun.lock`, `**/bun.lockb`, `**/go.mod`, `**/go.sum`, `**/go.work`, `**/go.work.sum`, `**/cargo.toml`, `**/cargo.lock`, `**/pyproject.toml`, `**/poetry.lock`, `**/pipfile`, `**/pipfile.lock`, `**/uv.lock`, `**/requirements*.txt`, `**/gemfile`, `**/gemfile.lock` (execution) | none |
+
+For example, a write to `CLAUDE.md` is held at merge (`agent-config`) but not
+denied at write time, because `**/claude*.md` is not in the write-time column.
 
 Why a list at all: a merged change waits for the morning replay, and three
 kinds of change do harm before the replay or a revert can act. A change to
@@ -332,7 +340,10 @@ Common semantics, which apply to all four types:
   the rule's glob, using the pattern syntax above. A rename is a deletion
   entry for the old path and an addition entry for the new path, and each is
   matched and evaluated alone. An entry with status `T` is not evaluated by
-  a content rule: the mode condition already holds it.
+  a content rule: the mode condition already holds it. More generally, an
+  entry whose head mode exists and is not `100644` is not a content target
+  (it already holds on mode); a deleted entry has no head mode and is a
+  target.
 - **Only holds.** A violated rule adds a `hold:owner` reason. A rule that
   matches nothing, or is satisfied, changes nothing. No rule can allow a path
   that another condition holds. The rules apply to every lane, to the
@@ -343,14 +354,25 @@ Common semantics, which apply to all four types:
   diff, not the base tip, so that replay and live evaluation read the same
   objects.
 - **Readable.** A blob is readable when it is at most `CONTENT_MAX_BYTES`
-  (1,048,576), valid UTF-8 and free of NUL bytes. An unreadable blob of a
-  matched entry holds under types 2 to 4 (detail `unreadable`). If the
-  collector did not supply a blob that a matched entry needs, the verdict is
-  `blocked:input` (`content-missing`): that is a collector fault, not a
-  property of the change.
+  (1,048,576), valid UTF-8, free of NUL bytes and does not begin with U+FEFF
+  (a byte-order mark: common loaders strip it and read the content after it
+  as if it were not there, so a rule that looked at the unstripped text could
+  be evaded). An unreadable blob of a matched entry holds under types 2 to 4
+  (detail `unreadable`). If the collector did not supply a blob that a matched
+  entry needs, or gave a side as absent where the status says it exists (the
+  base side of `M` and `D`, the head side of `A` and `M`) or as present where
+  the status says it is absent, the verdict is `blocked:input`
+  (`content-missing`): that is a collector fault, not a property of the
+  change.
 - **Reasons carry no file text.** A reason's detail is the entry's path and
   one word from a closed vocabulary (below). The text of a file, a line or a
   key never appears in a reason.
+- **Order of reasons.** Content reasons are added inside the per-entry loop of
+  section 5.4, for each entry in diff order, after that entry's other
+  reasons (mode, binary, floor, hold path, strong review, not-in-allowlist);
+  for one entry in the order of the types as listed below, and within a type
+  in the order of the rules in the manifest array. The per-pull-request
+  `too-large` reason follows all entries.
 - **Lines.** Lines are split at `\n`; one trailing `\r` is removed from each
   line; a final line without a newline counts; an empty file has no lines.
 
@@ -384,8 +406,9 @@ of distinct non-empty strings: top-level key names of a JSON object. A file
 under the glob may change only those keys.
 
 - *Parse*: each side that exists must be valid JSON whose top level is an
-  object, without a byte-order mark and without a duplicate key at any depth
-  (duplicate keys are read differently by different parsers). Otherwise the
+  object, and without a duplicate key at any depth (duplicate keys are read
+  differently by different parsers). A leading byte-order mark is already
+  unreadable. Otherwise the
   entry holds with detail `unreadable`. The parser needs no dependency; a
   strict tokenizer around `JSON.parse` is enough.
 - *Rule*: an entry with status `A` or `D` holds (detail `added` or
@@ -419,8 +442,9 @@ compared.
   that is not blank, and a repeated key. A first line that starts with `---`
   but is not exactly `---` (a trailing space, a language tag) is malformed. A
   side whose first line does not start with `---` has no front matter, which
-  is the same as an empty set of blocks; a leading byte-order mark or form
-  feed therefore reads as "no front matter".
+  is the same as an empty set of blocks; a leading form feed therefore reads
+  as "no front matter". (A leading byte-order mark never gets this far: the
+  file is unreadable and holds.)
 - *Rule*: an entry holds (detail `front-matter-invalid`) if a side that exists
   has malformed front matter, or the file is unreadable (detail
   `unreadable`). Otherwise take, per side, the map from key to block text
@@ -429,10 +453,17 @@ compared.
   that is not in `keys` is present on both sides with identical block text.
   An added or deleted file therefore passes only if every key it carries is
   named. Because a malformed or removed front matter makes keys vanish,
-  turning front matter into body text cannot hide a change.
+  turning front matter into body text (a form feed, a changed opener) cannot
+  hide a change, and a byte-order-mark prefix cannot hide it either, since it
+  makes the file unreadable.
 - Reason `rule-front-matter`.
-- Not covered: a whole-file rule such as "no carriage returns or byte-order
-  marks anywhere in a Markdown file" (section 11).
+- "Well-formed" means this section's grammar, not YAML. A value that YAML
+  would reject, or an anchor or alias, passes if the grammar accepts the block
+  and the block text is unchanged or the key is named (threat model residual
+  12).
+- Not covered: a whole-file rule such as "no carriage returns anywhere in a
+  Markdown file" (section 11). A leading byte-order mark is covered by
+  readability for every file a rule matches.
 
 **Evaluation and replay.** The core receives, with the diff entries, the
 blobs of each entry that matches a glob of types 2 to 4 (shape in the
@@ -470,7 +501,11 @@ allowlist (open question 22).
 
 The hold protects what a check result means at merge time. It does not stop
 the run itself: a same-repository `pull_request` run executes the branch's
-workflow file before any merge, receives the repository's secrets and may
+workflow file before any merge, receives the repository's secrets (this
+follows from GitHub's documented exception for forks, "With the exception of
+`GITHUB_TOKEN`, secrets are not passed to the runner when a workflow is
+triggered from a forked repository"; the same-repository case is not
+separately tested) and may
 raise its token permissions in that file (threat model residual 11). The
 answers to that are structural and sit outside the merge-time policy: a
 consumer keeps deploy secrets in an environment limited to its production
@@ -770,6 +805,13 @@ Decisions the hook returns:
   may open a pull request that changes them, and the gate leaves it for the
   owner. Content rules are not evaluated at write time. Whether the hook's
   deny set needs consumer additions is open question 2.
+- The write-time deny is only as good as the hook's ability to enumerate what
+  a call writes. A file-write tool names its path, but Bash can write files and
+  push commits with no per-path tool call. The requirement on the hook slice
+  is therefore: for a push (or any call that updates a remote ref), compute the
+  raw diff of the pushed range against the remote ref, evaluate every path of
+  it against the write-time column, and deny when the range cannot be
+  determined (open question 32).
 
 ### 8.2 Procedure call, in sessions with several repositories
 
@@ -849,12 +891,20 @@ Inputs:
   `merge-base..head`, as in section 5.4. Nothing is checked out;
 - optionally `--lane NAME`. With a lane, the lane-dependent conditions run as
   well (allowlist, strong-review routing, line budget); without one, only the
-  lane-independent classes are reported. With a queue lane, optionally
-  `--item ID`, which enables the own-report exemption of section 5.4 for that
-  item;
+  lane-independent classes are reported. A name that is not a lane of the
+  manifest gives `blocked:lane` (`unknown-lane`), never `clear`. With a queue
+  lane, optionally `--item ID`, which enables the own-report exemption of
+  section 5.4 for that item. An `--item` that does not match the queue-id form
+  `^[a-z0-9][a-z0-9-]*$`, or is given without `--lane`, or with a lane that is
+  not a queue lane, is a usage error;
 - the manifest, from a fresh fetch of the default branch, exactly as in
   section 6. `--manifest FILE` replaces it for backtests and tests only, and
   the output says so.
+
+The caller supplies the base. The check does not validate that `--base` is the
+named lane's base branch or the branch the pull request will target; a runner
+that passes another base gets a correct report for that base. This is a limit,
+recorded here and in the plan, not a condition.
 
 Output, one JSON object: `repo`, `kit`, the base SHA, the merge base, the head
 SHA, the lane or null, `manifest` (`source`: `trust-ref` or `file`, and the
@@ -876,9 +926,10 @@ every class that applies, in this order:
 `result` is `clear` when no path has a class other than `own-report` or
 `allowed` and the line budget holds, `hold:owner` or `hold:strong-review`
 otherwise (the same precedence as section 3.1), and `blocked:manifest`,
-`blocked:empty-diff` or `blocked:input` as for the gate. A failure to collect
-is `blocked:input` (`collect-failed`), never an empty result. Exit status: 0
-for `clear`, 1 for anything else, 2 for a usage error.
+`blocked:empty-diff`, `blocked:lane` or `blocked:input` as for the gate. A
+failure to collect is `blocked:input` (`collect-failed`), never an empty
+result. Exit status: 0 for `clear`, 1 for anything else, 2 for a usage error
+(including an `--item` as above).
 
 Because the path check and the gate call the same core function, a path that
 the check reports as `allowed` is not held by any change-set condition of the
@@ -972,7 +1023,7 @@ consumers after that is a recommendation, not a rule.
 | --- | --- |
 | Interactive lane (`interactive_auto`) for pull requests that match no lane | Not built (decision 2026-11-22). The rules an interactive merge depends on are the owner's own message in the session, a named pull request and a critic's waiver or convergence, and the gate sees none of them: the waiver is recorded in an agent-writable pull request body. In a backtest of one consumer with a forced interactive lane, 1 of 74 pull requests outside the queue lane got `merge` and the rest held or waited, mostly on paths the owner should see anyway |
 | `extra_check`: a consumer script, recorded contract below | Built only for the first rule the four content-rule types cannot express (open question 18). Declarative rules replay by construction, share one policy file and execute no consumer code; a script does none of these |
-| Content-rule extensions: a nested key path for `keys_only`; a literal leading `^` or trailing `$` in a line pattern; a whole-file rule (no carriage returns or byte-order marks); a fifth type "named sections of one Markdown file stay unchanged" | No consumer rule needs them yet except the last, which is the first candidate for the `extra_check` contract (open question 18) |
+| Content-rule extensions: a nested key path for `keys_only`; a literal leading `^` or trailing `$` in a line pattern; a whole-file rule (no carriage returns; a leading byte-order mark is already covered by readability); a fifth type "named sections of one Markdown file stay unchanged" | No consumer rule needs them yet except the last, which is the first candidate for the `extra_check` contract (open question 18) |
 | Reject `tier.default: "auto"` on a lane with `auto_merge: true` | Needs a schema version bump; no consumer's manifest uses `auto`. Do it at the first bump |
 | Process-state rules in the gate core, for example "hold while an open pull request is outside every lane" | A candidate home for the rule that an owner pull request being open stops the runner; the other home is the runner procedure. Decided at the first migration that needs it (open question 23). Never a content rule or a script |
 | Per-lane `hold_paths` | Only the interactive lane would need them, and that lane is not built |

@@ -6,7 +6,7 @@ overlay step, with backtest data). "Recommendation" is the current proposal
 where one exists; "not reviewed" means no critic has examined it.
 
 Items 1 to 11 were left open when the design-level review closed. Items 12 to
-21 were found while writing this repository's specification. Items 22 to 31
+21 were found while writing this repository's specification. Items 22 to 32
 were added with the policy-shape change of 2026-11-22
 ([decisions](decisions.md), [research note](research/2026-11-policy-shape.md)).
 An item marked **Closed** or **Decided** keeps its number, so that references
@@ -146,8 +146,9 @@ four types cover the multi-repo routine's front-matter rule and its
 version-only JSON rule and the game consumer's two specification rules. The
 contract of a consumer-supplied script is recorded in design section 11.1 and
 built only for the first rule the types cannot express. That is the routine's
-rule on named sections of its backlog file; its whole-file line-ending and
-byte-order-mark rule is a second, smaller gap. Open, and decided at that
+rule on named sections of its backlog file; its whole-file line-ending
+rule is a second, smaller gap (a leading byte-order mark is already covered:
+it makes a matched file unreadable, which holds). Open, and decided at that
 consumer's migration: build the contract, or add a fifth type ("named
 sections of one Markdown file stay unchanged"), and whether the line-ending
 rule becomes a type.
@@ -262,6 +263,17 @@ A reviewed kit that runs them in a throwaway repository is in
 results decide the fallbacks in section 8.5 and inform questions 2, 4, 6 and 1
 (hook scope, the answer to `ask`, the list of intercepted calls, and whether a
 hook loads after a branch switch).
+
+**32. Push-time enumeration for the hook's write and push deny.** Kit-level,
+hook slice. The deny is only as good as the hook's ability to enumerate what a
+call writes: a file-write tool names its path, but Bash can write files and
+push commits with no per-path tool call. The intended rule, a requirement of
+the hook slice: for a push, or any call that updates a remote ref, compute the
+raw diff of the pushed range against the remote ref, evaluate every path of it
+against the write-time column of the floor, and deny when the range cannot be
+determined. Open: how the hook learns the remote ref and range for each
+shape of call (`git push`, the API's ref and file writes), and which of them
+it intercepts at all (question 6).
 
 ## Recorded review findings (not fixed)
 

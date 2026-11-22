@@ -510,8 +510,8 @@ with it and are not part of Phase 1.
 | G19 | symlink | `hold:owner` (`mode`) | verdict 27 |
 | G20 | a JSON manifest may change only its version field | content rule `keys_only` | slice 2, K-rows |
 | G21 | non-Markdown file outside the allowlist | allowlist | verdict 30 |
-| G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | content rule `front_matter_only` | slice 2, F-rows |
-| G23 | CR line endings and byte-order marks in Markdown | the front-matter part is covered by `front_matter_only`; the whole-file part is a follow-up (design section 11) | slice 2, F-rows (front matter only) |
+| G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | content rule `front_matter_only`; a leading BOM makes the file unreadable and holds | slice 2, F-rows |
+| G23 | CR line endings and byte-order marks in Markdown | a leading BOM is covered by readability for every matched file and the front-matter part by `front_matter_only`; carriage returns outside the front matter are a follow-up (design section 11) | slice 2, F-rows and B-rows |
 | G24 | 150-line budget | `max_changed_lines` | verdict 34, 35 |
 | G25 | triage edits only two sections of the backlog; no heading or preamble change | consumer (the first candidate for `extra_check` or a fifth rule type) | none |
 | G26 | backlog file turned into a symlink | status `T`, `hold:owner` (`mode`) | verdict 27 |
@@ -589,7 +589,11 @@ Behaviour: [design 5.4.1](design.md#541-content-rules-later-slice) and section
 6. Same constraints as Phase 1: the core is pure (no I/O, no clock, no
 randomness), no dependencies, tests with `node:test`, each test written before
 the code it tests. The schema stays version 1: `content_rules` is an optional
-key, and a manifest without it behaves as before.
+key, and a manifest without it behaves as before. Validation and evaluation of
+`content_rules` land in the same pull request: a build in which the manifest
+parser accepts the key but nothing evaluates it would be less strict than a
+manifest that omits the rules. If the work is split, the parser keeps
+rejecting the key until evaluation exists.
 
 ### 9.1 Module layout
 
@@ -617,18 +621,20 @@ test/core/content.test.js, test/core/manifest.test.js, test/core/verdict.test.js
  */
 ```
 
-`contentTargets(manifest, files)` returns the paths of entries (status other
-than `T`) that match a glob of `hold_on_line_change`, `keys_only` or
-`front_matter_only`. Type 1 needs no contents. The collector reads, for each
+`contentTargets(manifest, files)` returns the paths of entries that match a
+glob of `hold_on_line_change`, `keys_only` or `front_matter_only`, excluding
+entries whose head mode exists and is not `100644` (this includes status `T`;
+they already hold on mode). A deleted entry has no head mode and is a target. Type 1 needs no contents. The collector reads, for each
 target, the blob at the merge base (state `absent` when the status is `A`) and
 at the head (state `absent` when the status is `D`). The core, not the
 collector, decides readability: size over the cap (`bytes: null`), invalid
-UTF-8 or a NUL byte is unreadable. Decoding uses
+UTF-8, a NUL byte or a leading U+FEFF is unreadable. Decoding uses
 `new TextDecoder('utf-8', {fatal: true, ignoreBOM: true})`: with the default
 `ignoreBOM: false` the decoder would silently drop a leading byte-order mark,
-which the JSON and front-matter rules must see. A target
-path missing from `contents`, or a side missing for a status that needs it,
-gives `blocked:input` (`content-missing`).
+and the readability check must see it. A target path missing from `contents`,
+a side given as `absent` where the status says it exists (base of `M` and `D`,
+head of `A` and `M`), or a side given as `present` where the status says it is
+absent, gives `blocked:input` (`content-missing`).
 
 New reason codes, added to the table of section 2.1:
 
@@ -637,8 +643,13 @@ New reason codes, added to the table of section 2.1:
 | `hold:owner` | `rule-add-delete`, `rule-line-change`, `rule-keys`, `rule-front-matter`; detail is `<path>: <word>`, the word one of `added`, `deleted`, `line-changed`, `key-changed`, `front-matter-invalid`, `front-matter-changed`, `unreadable` |
 | `blocked:input` | `content-missing` |
 
-No reason carries text from a file. Within `hold:owner`, content reasons come
-after `not-in-allowlist` (the order of design 5.4's list).
+No reason carries text from a file. Order inside `hold:owner`, so that
+deep-equal tests are determinate: reasons are added in the per-entry loop in
+diff order; for one entry, after its mode, binary, floor, hold-path and
+not-in-allowlist reasons, content reasons in the order of the types (`rule-add-delete`,
+`rule-line-change`, `rule-keys`, `rule-front-matter`) and within a type in the
+order of the rules in the manifest array; the per-pull-request `too-large`
+follows all entries.
 
 ### 9.3 Functions
 
@@ -697,12 +708,17 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | F2 | `front_matter_only` | an unnamed key's value changed; its list-form continuation lines changed; a key added; a key removed | `rule-front-matter` (front-matter-changed) |
 | F3 | `front_matter_only` | body edited only, front matter identical; neither side has front matter | none |
 | F4 | `front_matter_only` | head opener `--- `, `---yaml`, `----`; CRLF opener; no closing `---`; a `\r` inside; a comment line at column 0; a quoted key; a repeated key; a stray line before the first key | `rule-front-matter` (front-matter-invalid) |
-| F5 | `front_matter_only` | a leading BOM or form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-changed): the keys vanished |
+| F5 | `front_matter_only` | a leading form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-changed): the keys vanished |
 | F6 | `front_matter_only` | base ill-formed, head identical | `rule-front-matter` (front-matter-invalid) |
 | F7 | `front_matter_only` | added file with only named keys; added file with another key; deleted file with another key | none; `front-matter-changed`; `front-matter-changed` |
+| B1 | `front_matter_only`, keys `["description"]` | an added file whose head is U+FEFF, `---\nname: x\n---\n` | `rule-front-matter` (unreadable) |
+| B2 | `front_matter_only` | a modified file whose head gains a leading U+FEFF before an otherwise identical front matter | `rule-front-matter` (unreadable) |
+| B3 | `hold_on_line_change`, pattern `^Status:` | a head whose first line is U+FEFF followed by `Status: x`; the same on the base side only | `rule-line-change` (unreadable) |
+| B4 | `keys_only` | a head that begins with U+FEFF | `rule-keys` (unreadable) |
+| B5 | all | a U+FEFF that is not at the start of the file | readable: evaluated as text |
 | F8 | `front_matter_only` | unreadable blob | `rule-front-matter` (unreadable) |
-| X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T`; a type 1 glob only; no rules | the matching paths; excluded; empty; empty |
-| X2 | all | a target path missing from `contents`; a side missing for status `M` | `blocked:input` (`content-missing`) |
+| X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T`; head mode `100755`, `120000` or `160000`; a type 1 glob only; no rules | the matching paths; excluded; excluded; empty; empty |
+| X2 | all | a target path missing from `contents`; a side `absent` for status `M`; the head side `absent` for status `A`; the base side `present` for status `A`; the head side `present` for status `D` | `blocked:input` (`content-missing`) |
 | X3 | all | no reason contains any text of any file, for every row above | holds |
 
 Verdict (`verdict.test.js`, continuing the numbering of 6.1; the baseline gains
@@ -717,7 +733,8 @@ no `content_rules`):
 | 69 | a file under `keys_only` with only the named key changed, in the allowlist | `merge` | |
 | 70 | as 69 but outside the allowlist | `hold:owner` | `not-in-allowlist` (a content rule never grants) |
 | 71 | `contents` missing for a target | `blocked:input` | `content-missing` |
-| 72 | replay: the same input with `asOf` set | the same verdict and reasons as live | |
+| 72 | replay: the same input with `asOf` set later than every check-run and reviewer timestamp in the baseline (otherwise replay legitimately differs) | the same verdict and reasons as live | |
+| 74 | two content reasons on one entry and one on another; `too-large` also exceeded | reasons in the order of 9.2 (deep-equal) | |
 | 73 | two evaluations of one input deep-equal; the input is not mutated | | |
 
 Collector (`collect.test.js`):
@@ -732,10 +749,13 @@ Collector (`collect.test.js`):
 
 ### 9.5 Order of work
 
-1. `constants.js`, `manifest.js` and rows M1 to M8.
+1. `constants.js`; write the manifest rows M1 to M8, but keep the parser
+   rejecting `content_rules` until step 3 is done (the key is accepted only
+   when evaluation exists).
 2. `content.js` helpers with L1 to L4, then the four rule types with A, N, K,
-   F and X rows.
-3. `verdict.js` integration with rows 65 to 73.
+   F, B and X rows.
+3. `verdict.js` integration with rows 65 to 74, and in the same pull request
+   the parser change that accepts the key.
 4. `collect.js` with rows C1 to C5.
 5. Add the `content_rules` fragment to the design's example block, so that the
    existing example test covers it.
@@ -749,7 +769,8 @@ disagree.
 ### 10.1 Module layout
 
 ```text
-src/core/constants.js    FLOOR becomes [{id, class, writeTimeDeny, patterns}], ids as in design 5.4
+src/core/constants.js    FLOOR becomes [{id, patterns: [{pattern, classes}], writeTimeDeny: [pattern]}], ids as in design 5.4;
+                         writeTimeDeny is a subset of the category's patterns (possibly empty); classes is a list per pattern
 src/core/changes.js      classifyChanges({manifest, laneName, itemId, files, contents}) -> {paths, reasons}
 src/core/verdict.js      step 5 (change set) calls classifyChanges; behaviour unchanged
 src/collect/collect-paths.js  collectPaths({repo, repoDir, base, head, lane, item, manifestFile}, deps) -> PathInput
@@ -774,7 +795,12 @@ agent-pipeline-gate check-paths --repo OWNER/NAME --repo-dir DIR --base BRANCH -
 - The manifest is read as in section 4, step 4. `--manifest FILE` is accepted;
   the output records `manifest.source` (`trust-ref` or `file`) and the blob id
   read.
-- `--item` requires `--lane` to name a queue lane; otherwise exit 2.
+- A `--lane` that is not a lane of the manifest gives `blocked:lane`
+  (`unknown-lane`), exit 1, never `clear`.
+- `--item` must match `^[a-z0-9][a-z0-9-]*$` and requires `--lane`; with a lane
+  that is not a queue lane it is also a usage error (exit 2).
+- `--base` is supplied by the caller and is not validated against the lane's
+  base branch (design 8.6); the report is for the base given.
 - `classifyChanges` returns, per path, `classes` in the order of the design's
   table and the reasons that `evaluate` would give for the change-set
   conditions. With no lane, the lane-dependent conditions (allowlist, strong
@@ -804,6 +830,9 @@ agent-pipeline-gate check-paths --repo OWNER/NAME --repo-dir DIR --base BRANCH -
 | P11 | `max_changed_lines` exceeded, lane given | `result: hold:owner`, reason `too-large` |
 | P12 | agreement: for every verdict row of 6.1 and 9.4 whose expected verdict has change-set reasons, `classifyChanges` returns the same reasons that `evaluate` returns | equal |
 | P13 | no reason carries file text | holds |
+| P14 | `--lane` names no lane of the manifest (with and without content rules) | `blocked:lane` (`unknown-lane`), exit 1, no `paths` marked clear |
+| P15 | `--item` `A_b`, `-x`, empty, `x/y`; `--item` without `--lane`; `--item` with a caller lane | usage error, exit 2 |
+| P16 | `--base` a branch other than the lane's base | the report for that base; no error |
 
 `collect-paths.test.js` (fake `run`): the manifest is read from the trust ref
 unless `manifestFile` is given, and the output says which; `--head` that is not
@@ -836,8 +865,8 @@ test/core/writeguard.test.js
 ```
 
 `writeDecision` denies when `laneName` is a runner lane (the hook passes it
-from `PIPELINE_LANE`) and `path` matches a floor category whose
-`writeTimeDeny` is set (design 5.4), except `.agent-line/reports/<itemId>.md`
+from `PIPELINE_LANE`) and `path` matches one of the `writeTimeDeny` patterns of
+a floor category (design 5.4), never merely a pattern of the category, except `.agent-line/reports/<itemId>.md`
 for `op: 'write'` and `op: 'create'`. Any other path, any other lane, and an
 interactive session (no lane) give `none`. It reads no list of its own.
 
@@ -847,10 +876,11 @@ interactive session (no lane) give `none`. It reads no list of its own.
 | W2 | `.agent-line/queue/a.md`, `.agent-line/manifest.json`, `.agent-line/reports/other.md` | deny |
 | W3 | `.agent-line/reports/<itemId>.md` write and create; delete | none; deny |
 | W4 | `.claude/settings.json`, `a/.claude/hooks/x` | deny |
-| W5 | `package.json`, `CLAUDE.md`, `.husky/pre-commit` (floor, not write-time) | none |
+| W5 | `package.json`, `CLAUDE.md`, `docs/agents-notes.md`, `.codex/config`, `.husky/pre-commit` (floor patterns that are not write-time) | none |
 | W6 | a `hold_paths` entry; a path outside the allowlist | none |
 | W7 | no lane, an unknown lane | none |
-| W8 | the set of write-time patterns equals the write-time column of the design's table (a test reads the table) | equal |
+| W8 | the set of write-time patterns equals the write-time column of the design's table (a test reads the table), and each is one of its category's `patterns` | equal; subset |
+| W9 | every floor category's `classes` lists are non-empty and each pattern has at least one of authority, execution, oracle | holds |
 
 The hook adapter itself (settings entry, matcher, exit codes, `onFailure`) is
 specified in design 8.1 and is tested when it is built. That slice also closes
@@ -858,3 +888,11 @@ review findings R2 and R3 of the open questions: the collector fetches by
 explicit URL with hooks disabled, and `evaluate` stops accepting `--manifest`
 (it stays on `replay` and `backtest`; `check-paths` accepts it and records the
 source in its output). The hook never passes it.
+
+Push-time enumeration is a requirement of the hook adapter, not of
+`writeDecision`: the adapter must obtain the paths a call writes. For a push or
+any call that updates a remote ref it takes the raw diff of the pushed range
+against the remote ref, passes every path to `writeDecision`, and denies when
+the range cannot be determined (design 8.1, open question 32). Bash can write
+files and push with no per-path tool call, so a file-write matcher alone is
+not enough.

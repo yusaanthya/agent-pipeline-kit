@@ -21,7 +21,7 @@ merge. You are not asked to review code: there is none in this change.
 | [Design](design.md) | Section 5.4: the allowlist is the form of a runner lane; the floor table gains category ids, a class (authority, execution, oracle) and a write-time column; product code is deliberately off the floor. New section 5.4.1: four content-rule types with exact semantics. Section 6: one policy, two homes, three readers; the optional `content_rules` manifest key (schema stays 1). New section 8.6: the path check without a pull request. Section 8.1: the hook reads the floor's write-time column. Sections 5.5, 9, 10, 11: one-way check trust, pre-merge execution, the marker names the lane, migration order, follow-ups and the recorded `extra_check` contract (11.1) |
 | [Decisions](decisions.md) | Nine entries dated 2026-11-22, one per decision, each with the reason and what it replaces, and a tenth that lists what is left open |
 | [Threat model](threat-model.md) | Residuals 2, 6, 7 revised; 11 (pre-merge execution) and 12 (content rules are structural) added; protection table row; optional upgrades |
-| [Open questions](open-questions.md) | 3 closed, 9, 13, 18, 19 rewritten, 1, 2, 8 updated; 22 to 25 added, and 26 to 31 as probes with what each outcome implies |
+| [Open questions](open-questions.md) | 3 closed, 9, 13, 18, 19 rewritten, 1, 2, 8 updated; 22 to 25 added, 26 to 31 as probes with what each outcome implies, and 32 (push-time enumeration for the hook) |
 | [Implementation plan](implementation-plan.md) | Sections 9 to 11: content rules in the core, the path check, the hook's policy reading; test tables; order of work |
 | [Research note](research/2026-11-policy-shape.md) | New: what outside practice does, with sources and a verified, summarised or inferred mark on every claim |
 | [`probes/phase0/`](../probes/phase0/README.md) | New: a reviewed, never-run kit for the eight Phase 0 hook checks |
@@ -34,7 +34,7 @@ merge. You are not asked to review code: there is none in this change.
 3. [Threat model](threat-model.md): residuals 2, 6, 7, 11, 12.
 4. [Implementation plan](implementation-plan.md) sections 9 to 11, for whether
    the semantics are testable as written.
-5. [Open questions](open-questions.md) 22 to 31.
+5. [Open questions](open-questions.md) 22 to 32.
 
 ## Evidence
 
@@ -127,6 +127,16 @@ Content-rule semantics (design 5.4.1):
   Does anything make a readable file hold wrongly often enough to matter?
 - A rename is a deletion plus an addition, evaluated separately. Does a rename
   across the glob boundary behave as intended in every type?
+- A file that begins with U+FEFF is unreadable and holds under types 2 to 4,
+  because common loaders strip it. Is there another prefix or encoding (a
+  UTF-16 file, a NUL byte, a leading form feed) that a loader reads as
+  something the rule did not see? Is "well-formed means this grammar, not
+  YAML" an acceptable limit?
+- Content reasons have a fixed order inside `hold:owner` (design 5.4.1, plan
+  9.2). Is it determinate for every input, including two rules of one type on
+  one entry?
+- Slice 2 must not accept `content_rules` before it evaluates them. Does the
+  plan's order of work guarantee that at every merge?
 
 Allowlist and default hold (design 5.4):
 
@@ -139,6 +149,10 @@ Allowlist and default hold (design 5.4):
   failure mode?
 - The floor's `.github/**` is root-only while `**/.claude/**` is nested. Is
   that difference deliberate and right?
+- The floor's data shape is per pattern: classes per pattern and a write-time
+  deny list that is a subset of the category's patterns. Does the design table,
+  the plan's constants and the hook's tests (a `CLAUDE.md` write is held at
+  merge but not denied at write time) say the same thing everywhere?
 - Moving a file from a held path into an allowed one holds by the deletion.
   Does any other move or mode change slip through?
 
@@ -149,6 +163,18 @@ Agent-writable inputs:
 - Can a reason's detail carry file text, key names or line text anywhere?
 - The path check takes a head SHA from the caller's clone. Is any consumer of
   its `clear` result able to treat it as permission to merge?
+- The path check's unknown inputs: a `--lane` that names no lane gives
+  `blocked:lane`, an `--item` outside the queue-id form is a usage error, and
+  a `--base` that is not the lane's base is reported as given, not validated.
+  Can any of them yield `clear` for a change the gate would hold?
+
+Weak points the design states and a reviewer should still test:
+
+- The hook's write and push deny is only as good as its ability to enumerate
+  what a call writes: Bash can write files and push with no per-path tool call.
+  The hook slice must diff the pushed range against the remote ref, evaluate
+  every path and deny when the range cannot be determined (open question 32).
+  Is that rule complete for the shapes of call a runner uses?
 - When the merge could be `merge`, the base tip is an ancestor of the head, so
   the merge base equals the base tip; is the content rules' use of the merge
   base consistent with that in live and replay mode?
@@ -292,9 +318,15 @@ Status labels:
   what a preview build can see, and whether the cloud runner can use a separate
   identity.
 - That a same-repository `pull_request` run receives the repository's secrets:
-  read from documentation by a critic, not exercised.
+  it follows from GitHub's documented exception for forks ("With the exception
+  of `GITHUB_TOKEN`, secrets are not passed to the runner when a workflow is
+  triggered from a forked repository"); not separately tested.
 - The policy-shape change itself: its research synthesis was reviewed by two
-  critics; the specification text of this change has had no review yet.
+  critics. The specification has had one independent review, which found three
+  gaps (a byte-order mark could evade the content rules, the path check's
+  unknown inputs were unspecified, and the floor's data shape could not
+  represent its own table); they are fixed in the text. It has had no review
+  since.
 - Every Phase 0 check in [the design](design.md#85-phase-0-dependencies):
   hooks in scheduled tasks, `onFailure: block` there, environment variables
   reaching the hook, `ask` behaviour there, anonymous kit clone from a task,
