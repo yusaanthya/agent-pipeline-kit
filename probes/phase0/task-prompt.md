@@ -71,7 +71,8 @@ result (error text or "no output") in the notes. Do not retry.
 Then run: ls -1 /tmp/phase0 and copy the listing into the notes ("files that exist" = the
 command really ran).
   3e  Early save, in ONE Bash call, so a later stall does not lose the log (make sure the notes file exists first):
-      git checkout -b claude/phase0-results-<RUN_ID>-A && mkdir -p results/<RUN_ID>-A && cp /tmp/phase0/hook-log.jsonl results/<RUN_ID>-A/hook-log-early.jsonl && cp /tmp/phase0/findings-A.md results/<RUN_ID>-A/findings-A-early.md && git add results && git commit -m "chore: phase0 results <RUN_ID> A early" && git push -u origin claude/phase0-results-<RUN_ID>-A && git checkout main
+      git checkout -b claude/phase0-results-<RUN_ID>-A && mkdir -p results/<RUN_ID>-A && { if [ -f /tmp/phase0/hook-log.jsonl ]; then cp /tmp/phase0/hook-log.jsonl results/<RUN_ID>-A/hook-log-early.jsonl; else touch results/<RUN_ID>-A/NO-HOOK-LOG-EARLY; fi; } && cp /tmp/phase0/findings-A.md results/<RUN_ID>-A/findings-A-early.md && git add results && git commit -m "chore: phase0 results <RUN_ID> A early" && git push -u origin claude/phase0-results-<RUN_ID>-A && git checkout main
+      A missing hook log is a result, not a failure: the command saves the notes and an empty NO-HOOK-LOG-EARLY marker instead.
       If any part fails, record the verbatim error, run `git checkout main`, and go on.
 
 STEP 4 - merge attempt on the TEST pull request only (ITEM 1 for MCP tools, 7, 8). The
@@ -103,8 +104,8 @@ If 6a or 6b fails, record the error and skip to step 7.
 
 STEP 7 - persist evidence. Make sure you are on main (6e) and have no uncommitted changes, then in ONE Bash call
 (if the branch from 3e does not exist, use `git checkout -b` instead of `git checkout`):
-  git checkout claude/phase0-results-<RUN_ID>-A && mkdir -p results/<RUN_ID>-A && cp /tmp/phase0/hook-log.jsonl results/<RUN_ID>-A/hook-log.jsonl && cp /tmp/phase0/findings-A.md results/<RUN_ID>-A/findings-A.md && ls -1 /tmp/phase0 > results/<RUN_ID>-A/tmp-listing.txt
-(If the notes file is elsewhere, copy it. If the hook log does not exist, say so in the notes and create results/<RUN_ID>-A/NO-HOOK-LOG.)
+  git checkout claude/phase0-results-<RUN_ID>-A && mkdir -p results/<RUN_ID>-A && { if [ -f /tmp/phase0/hook-log.jsonl ]; then cp /tmp/phase0/hook-log.jsonl results/<RUN_ID>-A/hook-log.jsonl; else touch results/<RUN_ID>-A/NO-HOOK-LOG; fi; } && cp /tmp/phase0/findings-A.md results/<RUN_ID>-A/findings-A.md && ls -1 /tmp/phase0 > results/<RUN_ID>-A/tmp-listing.txt
+(If the notes file is elsewhere, copy it. If the hook log does not exist, say so in the notes before this call; the command then creates results/<RUN_ID>-A/NO-HOOK-LOG and still saves the notes and the listing.)
 
 STEP 8 - commit and push ONLY to the branch named claude/phase0-results-<RUN_ID>-A :
   git add results && git commit -m "chore: phase0 results <RUN_ID> A final" && git push -u origin claude/phase0-results-<RUN_ID>-A
