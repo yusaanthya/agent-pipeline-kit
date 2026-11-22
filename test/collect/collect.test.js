@@ -278,7 +278,11 @@ test('collect 9: replay uses the first parent of the merge commit as the base an
         { event: 'renamed', created_at: '2026-11-10T14:00:00Z', rename: { from: 'feat: mid', to: 'feat: renamed later' } },
       ],
       '/repos/owner/repo/issues?labels=pipeline-halt&state=all': [{ number: 3, created_at: '2026-11-02T00:00:00Z', closed_at: '2026-11-03T00:00:00Z' }],
-      '/repos/owner/repo/pulls?state=all&head=owner:preview&base=main': [{ number: 9, head: { ref: 'preview', repo: { full_name: 'owner/repo' } }, base: { ref: 'main' }, created_at: '2026-11-01T00:00:00Z', closed_at: '2026-11-11T00:00:00Z' }],
+      '/repos/owner/repo/pulls?state=all&base=main': [
+        { number: 9, head: { ref: 'preview', repo: { full_name: 'owner/repo' } }, base: { ref: 'main' }, created_at: '2026-11-01T00:00:00Z', closed_at: '2026-11-11T00:00:00Z' },
+        { number: 10, head: { ref: 'preview', repo: { full_name: 'fork/repo' } }, base: { ref: 'main' }, created_at: '2026-11-05T00:00:00Z', closed_at: null },
+        { number: 11, head: { ref: 'other', repo: { full_name: 'owner/repo' } }, base: { ref: 'main' }, created_at: '2026-11-05T00:00:00Z', closed_at: null },
+      ],
     },
   });
   const input = await collect(opts({ replay: true }), deps(world));
@@ -292,7 +296,10 @@ test('collect 9: replay uses the first parent of the merge commit as the base an
   assert.equal(input.pr.merged, true);
   assert.deepEqual(input.limits, ['manifest-by-commit-date', 'halt-label-timing', 'freeze-retarget-unknown']);
   assert.deepEqual(input.haltIssues, [{ number: 3, createdAt: '2026-11-02T00:00:00Z', closedAt: '2026-11-03T00:00:00Z' }]);
-  assert.deepEqual(input.pulls, [{ number: 9, headRef: 'preview', headRepo: 'owner/repo', baseRef: 'main', createdAt: '2026-11-01T00:00:00Z', closedAt: '2026-11-11T00:00:00Z' }]);
+  assert.deepEqual(input.pulls, [{ number: 9, headRef: 'preview', headRepo: 'owner/repo', baseRef: 'main', createdAt: '2026-11-01T00:00:00Z', closedAt: '2026-11-11T00:00:00Z' },
+    { number: 10, headRef: 'preview', headRepo: 'fork/repo', baseRef: 'main', createdAt: '2026-11-05T00:00:00Z', closedAt: null }]);
+  // A fork's promotion pull request freezes the replay like an in-repo one.
+  assert.equal(evaluate(input).verdict, 'wait:freeze');
   // The queue item is read at the first parent, the manifest at the dated commit.
   const reads = gitCalls(world).filter((c) => c.args[2] === 'cat-file').map((c) => c.args[4]);
   assert.ok(reads.includes(`${SHAS.PARENT}:.agent-line/queue/sim-1.md`));

@@ -576,7 +576,7 @@ that stay true after the merge:
 | Title | reconstructed from the issue timeline's `renamed` events |
 | Draft | taken as false: GitHub does not merge a draft pull request (not re-verified here) |
 | Halt | issues that carry `pipeline-halt` now and were open at the merge time; when the label was added or removed is not reconstructed (a limit) |
-| Freeze | pull requests with the freeze head and base that were open at the merge time; base retargeting is not reconstructed (a limit) |
+| Freeze | pull requests with the freeze head and base that were open at the merge time; base retargeting is not reconstructed (a limit); the head repository is ignored, as live |
 | Open state, `mergeable` | not evaluated (GitHub merged it) |
 
 Replay assumes that the pull request was merged by a squash or a merge commit.

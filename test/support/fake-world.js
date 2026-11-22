@@ -53,7 +53,7 @@ export function makeWorld(over = {}) {
     [`/repos/${repo}/issues?labels=pipeline-halt&state=all`]: [],
     [`/repos/${repo}/pulls?state=open`]: [{ number: 9, head: { ref: 'preview', repo: { full_name: 'owner/repo' } }, base: { ref: 'main' }, created_at: '2026-11-01T00:00:00Z', closed_at: null }],
     [`/repos/${repo}/issues/7/timeline`]: [],
-    [`/repos/${repo}/pulls?state=all&head=owner:preview&base=main`]: [],
+    [`/repos/${repo}/pulls?state=all&base=main`]: [],
     ...(over.rest ?? {}),
   };
   const refs = {

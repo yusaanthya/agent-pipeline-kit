@@ -168,12 +168,12 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
       ? Object.values(manifest.manifest.lanes).map((lane) => lane.freeze_while_open).filter(Boolean)
       : [];
     if (freezes.length > 0) limits.push('freeze-retarget-unknown');
-    const owner = repo.split('/')[0];
     const seen = new Set();
     for (const { head, base } of freezes) {
-      const query = `head=${encodeURIComponent(`${owner}:${head}`)}&base=${encodeURIComponent(base)}`;
-      for (const p of await gh.paginate(`/repos/${repo}/pulls?state=all&${query}`)) {
-        if (seen.has(p.number)) continue;
+      // The head filter needs an owner, and the live rule ignores the head repository,
+      // so filter on the base and match the head branch here.
+      for (const p of await gh.paginate(`/repos/${repo}/pulls?state=all&base=${encodeURIComponent(base)}`)) {
+        if (p.head?.ref !== head || p.base?.ref !== base || seen.has(p.number)) continue;
         seen.add(p.number);
         pulls.push(pullOf(p, p.closed_at ?? null));
       }

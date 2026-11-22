@@ -286,9 +286,10 @@ Replay mode (`replay: true`), differences:
 - Halt: `/repos/{repo}/issues?labels=pipeline-halt&state=all`; add the limit
   `halt-label-timing`.
 - Freeze: for each lane with `freeze_while_open`,
-  `/repos/{repo}/pulls?state=all&head=<owner>:<head>&base=<base>`; add the
-  limit `freeze-retarget-unknown`.
-
+  `/repos/{repo}/pulls?state=all&base=<base>`, keeping the pull requests whose
+  head branch is `<head>` from any repository (the live rule ignores
+  `headRepo`; the API head filter needs an owner, so the head is matched
+  locally); add the limit `freeze-retarget-unknown`.
 ## 5. CLI contract
 
 ```text
