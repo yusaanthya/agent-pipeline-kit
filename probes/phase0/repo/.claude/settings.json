@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*",
+        "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] },
+      { "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/decide.sh\" plain bash-plain MAIN", "timeout": 30 },
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/decide.sh\" strict bash-strict MAIN", "timeout": 30, "onFailure": "block" }
+        ] },
+      { "matcher": "mcp__github__merge_pull_request",
+        "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/decide.sh\" merge merge-exact MAIN", "timeout": 30 } ] },
+      { "matcher": "[Mm]erge",
+        "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/decide.sh\" merge merge-loose MAIN", "timeout": 30 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] }
+    ],
+    "PermissionRequest": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] }
+    ],
+    "PermissionDenied": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/record.sh\" MAIN", "timeout": 30 } ] }
+    ]
+  }
+}
