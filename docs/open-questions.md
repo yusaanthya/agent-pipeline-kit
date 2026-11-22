@@ -41,12 +41,11 @@ allowlist.** **Closed 2026-11-22.** Runner lanes are written as allowlists
 with default hold (decision 2026-11-22), so this consumer's manifest is an
 allowlist, not a carry-over of its current list. A security critic had
 recommended it because a merge there deploys production; a continuity critic
-had pointed out it is a behaviour change, and an allowlist is stricter, which
-the overlay step allows. A trial allowlist (`internal/**`, `cmd/**`,
-`web/src/**`, the test scripts, `readme.md`) passed all 10 sampled pull
-requests inferred to be runner merges (the author's classification, not a
-record kept by the runner). The entries are chosen at this consumer's migration from its
-backtest.
+had pointed out it is a behaviour change. The overlay step keeps the old
+rules in force, and each old hold is checked at the switch (design section
+10). The trial evidence for the allowlist form comes from a different
+consumer, not this one (see the review brief). The entries are chosen at this
+consumer's migration from its backtest.
 
 **4. Interactive behaviour on `fix`, `update`, `wait` and `blocked`.**
 Kit-level, decided once when the kit is built (that is, now). Deny is safer;
