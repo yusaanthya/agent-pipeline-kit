@@ -707,6 +707,7 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | K3 | `keys_only` | numbers `1` and `1.0`; objects equal with different key order | equal: none |
 | K4 | `keys_only` | status `A`; status `D` | `rule-keys` (added; deleted) |
 | K5 | `keys_only` | base or head: not JSON; top level an array; a BOM; a duplicate key at depth 1 and depth 3; unreadable | `rule-keys` (unreadable) |
+| K6 | `keys_only` | status `A` whose head is not JSON; status `A` whose head has a leading U+FEFF; status `D` whose base has a duplicate key; status `D` whose base is over the cap | exactly one `rule-keys` reason each: added; added; deleted; deleted (never `unreadable`) |
 | F1 | `front_matter_only` | only a named key's block changed; a named key added; removed | none |
 | F2 | `front_matter_only` | an unnamed key's value changed; its list-form continuation lines changed; a key added; a key removed | `rule-front-matter` (front-matter-changed) |
 | F3 | `front_matter_only` | body edited only, front matter identical; neither side has front matter | none |

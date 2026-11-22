@@ -413,7 +413,10 @@ under the glob may change only those keys.
   strict tokenizer around `JSON.parse` is enough.
 - *Rule*: an entry with status `A` or `D` holds (detail `added` or
   `deleted`): a structured file under a keys-only rule is neither created nor
-  removed unattended. For status `M`, take the top-level keys of both sides
+  removed unattended. This precedes the parse: for status `A` or `D` the
+  existing side is not parsed, so an added or deleted file that is malformed
+  or unreadable gives exactly one `rule-keys` reason per rule, with detail
+  `added` or `deleted`, never `unreadable`. For status `M`, take the top-level keys of both sides
   that are not in `keys`. The entry holds (detail `key-changed`) unless every
   such key is present on both sides with an equal value. Values are equal when
   they are the same JSON value: objects compare without key order, arrays with
