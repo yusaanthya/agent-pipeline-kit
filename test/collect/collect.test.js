@@ -370,7 +370,7 @@ test('collect 9h: a rebase merge is not detected or flagged', async () => {
   assert.ok(!input.limits.some((l) => l.includes('rebase')));
 });
 
-// Content rules (implementation plan 9.4, collector rows C1 to C5).
+// Content rules (collector rows C1 to C5).
 const CAP = 1048576;
 const OLD_M = '1'.repeat(40);
 const NEW_M = '2'.repeat(40);

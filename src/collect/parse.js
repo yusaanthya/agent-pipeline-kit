@@ -1,4 +1,4 @@
-// Pure parsers of `git diff -z` output (implementation plan section 1).
+// Pure parsers of `git diff -z` output (design 5.4).
 // Paths are bytes: they are decoded as UTF-8 and flagged when that is lossy.
 // `key` is the raw path bytes as a latin1 string, so that the raw and numstat
 // entries of one path can be joined without depending on decoding.

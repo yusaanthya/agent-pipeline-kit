@@ -1,4 +1,4 @@
-// The only place that spawns a process (implementation plan section 1).
+// The only place that spawns a process.
 // `execFile` with an argument array and `shell: false`; never a command
 // string, never a shell.
 import { execFile } from 'node:child_process';

@@ -5,11 +5,11 @@ Phase 1 and its slice 2 (the content rules of section 5.4.1 and the
 `content_rules` field of section 6) implement. Section 7 (pinning) and
 section 8 (hook, procedure invocation and the path check) are specified here
 and implemented in later slices; a statement about them describes intended
-behaviour, not code that exists. The slices are listed in
-[the implementation plan](implementation-plan.md#9-slice-2-content-rules-in-the-core).
+behaviour, not code that exists. The unbuilt slices are laid out in
+[the implementation plan](implementation-plan.md#10-slice-3-the-path-check-without-a-pull-request).
 Facts about GitHub, Claude Code and Codex that the design depends on are
 listed with their verification status in
-[the review brief](review-brief.md#platform-facts); the outside practice that
+[the platform facts](platform-facts.md); the outside practice that
 informed the path, signal and extension design is summarised in
 [the research note](research/2026-11-policy-shape.md).
 
@@ -324,8 +324,8 @@ Every other character is literal. A manifest pattern containing `?`, `[`, `]`,
 This is the subset the consumers' current path lists use. Paths and patterns
 are compared after lowercasing both, so a path that differs from a listed one
 only by case matches the same entries (for a hold this only holds more; for an
-allowlist entry it allows a case variant of an allowed path, which is
-recorded in the review brief as a question).
+allowlist entry it allows a case variant of an allowed path; see R9 of
+[open questions](open-questions.md)).
 
 #### 5.4.1 Content rules
 
@@ -490,8 +490,8 @@ compared.
   matter malformed, so a type 4 file holds.
 
 **Evaluation and replay.** The core receives, with the diff entries, the
-blobs of each entry that matches a glob of types 2 to 4 (shape in the
-implementation plan, slice 2). A pure helper tells the collector which paths
+blobs of each entry that matches a glob of types 2 to 4 (the `contents`
+field of the input, typed in `src/core/verdict.js`). A pure helper tells the collector which paths
 need blobs, so the collector holds no decision. The rules read only git
 objects, never the clock or the network, so replay evaluates them exactly as
 live mode does, from the manifest in force at the merge time (section 9). A
