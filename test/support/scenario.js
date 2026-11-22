@@ -50,3 +50,25 @@ export async function checkPaths(over = {}, extra = []) {
   const code = await main(argv, { run: world.run, out: (line) => out.push(line), err: (line) => err.push(line) });
   return { code, result: out.length === 1 ? JSON.parse(out[0]) : null, out, err, world };
 }
+
+const mergeTool = 'mcp__github__merge_pull_request';
+export const mergeCall = (input = {}) => ({
+  tool_name: mergeTool,
+  tool_input: {
+    owner: 'owner', repo: 'repo', pullNumber: 7, merge_method: 'squash', expectedHeadSha: SHAS.HEAD,
+    commit_message: 'Merge it.\n\nAuto-Merged-By: test-runner', ...input,
+  },
+});
+
+/**
+ * Runs the `hook` command against the fake world with a tool call on stdin.
+ * @param {object} call the PreToolUse input, or a raw string for malformed input
+ * @param {object} [over] makeWorld overrides
+ */
+export async function hook(call, over = {}) {
+  const world = makeWorld({ ...over, pid: process.pid, rest: { ...noPromotion, ...codexCleanOn(), ...over.rest } });
+  const err = [];
+  const stdin = async () => (typeof call === 'string' ? call : JSON.stringify(call));
+  const code = await main(['hook', '--repo-dir', '/work/clone'], { run: world.run, stdin, out: () => {}, err: (line) => err.push(line) });
+  return { code, err };
+}

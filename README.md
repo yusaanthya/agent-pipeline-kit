@@ -28,7 +28,7 @@ flowchart TD
 
 ### Shared gate
 
-The caller runs the gate and handles the verdict. A `merge` verdict lets the caller proceed through its normal permission checks. The hook is a planned adapter. Use an explicit procedure call in environments where the hook probe cannot establish reliable coverage.
+The caller runs the gate and handles the verdict. A `merge` verdict lets the caller proceed through its normal permission checks. The PreToolUse hook is the adapter for single-repo sessions; see [Install the hook](#install-the-hook). Use an explicit procedure call in environments where the hook probe cannot establish reliable coverage.
 
 ```mermaid
 flowchart TD
@@ -91,7 +91,7 @@ stateDiagram-v2
 
 ### Repository layout
 
-The target includes planned hooks, bootstrap, and a shared runner procedure. The bootstrap checks that the pinned kit commit is reachable from the kit’s default branch before executing it, and the owner approves pin changes. Keep the consumer as the sole attached repository for a hook-based session and read the public kit at its owner-approved pin. The cloud probe showed that one pinned file can be read anonymously at its raw URL and that the pinned commit can be fetched through the cloud Git proxy, which is credentialed, so only the raw read is anonymous. The kit is not vendored. The public kit uses synthetic or public fixtures. Private consumer names, account and deployment settings, queue and report data, and secrets stay outside it. Existing GitHub controls stay in force. The current CLI reads the manifest and returns verdicts.
+The target includes the hook and its bootstrap, and a planned shared runner procedure. The bootstrap fetches the pinned kit commit by SHA, checks the fetched commit against the pin and runs it; it does not check that the commit is reachable from the kit’s default branch, and the owner approves pin changes. Keep the consumer as the sole attached repository for a hook-based session and read the public kit at its owner-approved pin. The cloud probe showed that one pinned file can be read anonymously at its raw URL and that the pinned commit can be fetched through the cloud Git proxy, which is credentialed, so only the raw read is anonymous. The kit is not vendored. The public kit uses synthetic or public fixtures. Private consumer names, account and deployment settings, queue and report data, and secrets stay outside it. Existing GitHub controls stay in force. The current CLI reads the manifest and returns verdicts.
 
 ```mermaid
 flowchart TD
@@ -116,7 +116,7 @@ flowchart TD
 
 ### Shared policy and cutover
 
-The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. Three readers share the kit floor and the consumer manifest: the PR evaluator, the `check-paths` command, and the planned runner hook. For write and push checks, the hook enforces only the floor patterns marked for that purpose.
+The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. Three readers share the kit floor and the consumer manifest: the PR evaluator, the `check-paths` command, and the runner hook. For write and push checks, the hook enforces only the floor patterns marked for that purpose.
 
 Start by backtesting and running the gate in shadow mode. During overlay, require both the existing rules and the gate to allow an unattended merge. Switch only after every existing hold has equivalent coverage or an explicit, recorded retirement, the path check without a PR exists, and the branch used to read policy is settled. Then replace duplicated rules with a pointer to the shared policy. [Historical hook plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#11-slice-4-the-hook-reads-the-same-policy) · [Historical open questions](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/open-questions.md)
 
@@ -140,6 +140,16 @@ npm test
 - `check-paths` reports whether the change-set conditions of `evaluate` would hold a head commit that has no pull request, such as an unpushed commit in the clone, against a base branch fetched from `origin`. It checks nothing else, so the result is `clear` or a `hold:*` or `blocked:*` result, never `merge`. Without `--lane` the lane conditions are skipped. `--item ID` with a queue lane exempts that item's own report.
 
 `evaluate` and `replay` emit a JSON object and exit `0` for `merge` or `1` for any other verdict. `check-paths` exits `0` for `clear` and `1` otherwise. `backtest` exits `0` after producing a summary even if it found anomalies, so inspect the JSON. It exits `1` if collecting the PR list fails. Invalid arguments exit `2`.
+
+## Install the hook
+
+The hook blocks an agent's GitHub merge tool call unless the gate says `merge` for that pull request. It runs before the call, allows non-merge tools untouched, and never asks: it exits `0` to allow or `2` to block, with one line on stderr naming the verdict and its first reason. The call must also match the verdict: `expectedHeadSha` equal to the verdict's head, `merge_method` `squash`, and a `commit_message` that contains the lane marker (`Auto-Merged-By: ...`) as an exact line. Any failure blocks, including a missing manifest or kit commit, a `gh` or `git` error, a gate crash and malformed tool input. The merge tool is matched by name, `mcp__<server>__merge_pull_request`.
+
+1. Copy [`examples/hook-bootstrap.js`](examples/hook-bootstrap.js) to `.claude/hooks/` in the consumer repository.
+2. Merge [`examples/settings.json`](examples/settings.json) into the repository's `.claude/settings.json` and replace the kit URL. Keep `"onFailure": "block"` on every gate hook entry: without it a failing hook does not stop the call. The `permissions.deny` list closes the tools that skip the merge call: auto-merge, direct file writes and `gh pr merge`.
+3. Pin the kit commit in `.agent-line/manifest.json` on the default branch. The bootstrap fetches that default branch from `origin`, fetches the pinned commit from the kit URL into a temporary directory, checks that the checkout is that commit and runs its `hook` command. It does not check that the commit is reachable from the kit's default branch.
+
+Preconditions in the environment that runs the hook: Node.js 22 or newer on `PATH`; `gh` authenticated with read access to the repository; a clone of the consumer repository with `origin` set and enough history to find the merge base; and network access to the kit's Git URL. This is a guardrail against honest mistakes, not a security barrier, as described under the Phase 0 probe below.
 
 ## Configure policy
 
