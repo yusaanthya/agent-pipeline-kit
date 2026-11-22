@@ -170,8 +170,8 @@ Each of these is accepted and named; none is closed by the kit.
     are not changes they hold. A line separator that readers honour and the
     line split does not (a carriage return outside a CRLF, U+000B, U+000C,
     U+0085, U+2028, U+2029) makes a type 2 file unreadable, so it holds and
-    cannot hide a guarded line; one inside a front-matter value is still part
-    of that key's block and passes when the key is named. JSON nested deeper
+    cannot hide a guarded line; one inside the front matter of a type 4 file
+    makes the front matter malformed, so it holds as well. JSON nested deeper
     than 512 containers is unreadable, so what the parser can read does not
     depend on the call's stack. They apply only to the globs a consumer lists.
     "Well-formed" means the kit's own grammar, not YAML: a value that YAML

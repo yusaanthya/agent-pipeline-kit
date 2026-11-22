@@ -273,6 +273,8 @@ export function readFrontMatter(text) {
   for (let i = 1; i < close; i += 1) {
     const line = lines[i];
     if (line.includes('\r')) return { ok: false };
+    // A separator readers honour would show a key this grammar does not see.
+    for (const c of line) if (SEPARATORS.has(c)) return { ok: false };
     if (KEY_LINE.test(line)) {
       flush();
       key = line.slice(0, line.indexOf(':'));

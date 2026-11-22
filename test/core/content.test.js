@@ -734,3 +734,15 @@ test('B3 readFrontMatter: whitespace then hyphens at the end of the text is malf
   assert.deepEqual(readFrontMatter(' ---'), { ok: false });
   assert.deepEqual(readFrontMatter('\n\n---'), { ok: false });
 });
+
+// A line separator that readers honour, inside the front matter, would let a
+// reader see a key the grammar reads as part of a named key's value.
+for (const [name, sep] of [['U+000B', '\u000B'], ['U+000C', '\u000C'], ['U+0085', '\u0085'], ['U+2028', ' '], ['U+2029', ' ']]) {
+  test(`readFrontMatter: ${name} inside the front matter is malformed`, () => {
+    assert.deepEqual(readFrontMatter(`---\ndescription: x${sep}tools: all\n---\nbody\n`), { ok: false });
+    assert.deepEqual(readFrontMatter(`---\ndescription: x\n  more${sep}tools: all\n---\n`), { ok: false });
+  });
+  test(`readFrontMatter: ${name} in the body after the closer is not the front matter's concern`, () => {
+    assert.equal(readFrontMatter(`---\ndescription: x\n---\nbody${sep}more\n`).ok, true);
+  });
+}

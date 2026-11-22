@@ -485,8 +485,9 @@ compared.
 - Not covered: a whole-file rule such as "no carriage returns anywhere in a
   Markdown file" (section 11). A leading byte-order mark is covered by
   readability for every file a rule matches, and hidden line separators by
-  the readability of type 2 files (above); a separator inside a front-matter
-  value is part of that key's block text.
+  the readability of type 2 files (above); a carriage return or one of those
+  separators on any line between the opener and the closer makes the front
+  matter malformed, so a type 4 file holds.
 
 **Evaluation and replay.** The core receives, with the diff entries, the
 blobs of each entry that matches a glob of types 2 to 4 (shape in the

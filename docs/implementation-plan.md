@@ -216,7 +216,7 @@ broken by the greatest `id`.
 ### 3.2 `readMergeField`
 
 The first line must be exactly `---`; front matter ends at the next line that
-is exactly `---`. A `\r` anywhere in the front matter, no closing line, or more
+is exactly `---`. A `\r` or a line separator (U+000B, U+000C, U+0085, U+2028, U+2029) anywhere in the front matter, no closing line, or more
 than one line starting with `merge:` gives `{ ok: false }`. A line matching
 `^merge:[ \t]*(\S+)[ \t]*$` gives its value: `runner` or `owner`; any other
 value gives `{ ok: false }`. No `merge:` line gives `{ ok: true, value: null }`.
@@ -716,7 +716,7 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | F1 | `front_matter_only` | only a named key's block changed; a named key added; removed | none |
 | F2 | `front_matter_only` | an unnamed key's value changed; its list-form continuation lines changed; a key added; a key removed | `rule-front-matter` (front-matter-changed) |
 | F3 | `front_matter_only` | body edited only, front matter identical; neither side has front matter | none |
-| F4 | `front_matter_only` | head opener `--- `, `---yaml`, `----`; CRLF opener; no closing `---`; a `\r` inside; a comment line at column 0; a quoted key; a repeated key; a stray line before the first key | `rule-front-matter` (front-matter-invalid) |
+| F4 | `front_matter_only` | head opener `--- `, `---yaml`, `----`; CRLF opener; no closing `---`; a `\r` or a line separator (U+000B, U+000C, U+0085, U+2028, U+2029) inside; a comment line at column 0; a quoted key; a repeated key; a stray line before the first key | `rule-front-matter` (front-matter-invalid) |
 | F5 | `front_matter_only` | a leading form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-invalid): whitespace before the opener is malformed (changed by B3; it was front-matter-changed when a form feed read as "no front matter") |
 | F6 | `front_matter_only` | base ill-formed, head identical | `rule-front-matter` (front-matter-invalid) |
 | F7 | `front_matter_only` | added file with only named keys; added file with another key; deleted file with another key | none; `front-matter-changed`; `front-matter-changed` |
