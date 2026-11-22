@@ -254,9 +254,11 @@ last resort, with the contract recorded in
 
 - The vendor documents that its auto mode blocks "Merging a pull request no
   human has approved" by default (**S**,
-  <https://code.claude.com/docs/en/permission-modes>), yet the kit's
-  unattended runner merges its own pull requests. How that configuration
-  permits it is not known; a classifier change could stop runner merges.
+  <https://code.claude.com/docs/en/permission-modes>), yet an existing
+  consumer's unattended runner, which predates the kit and does not use it,
+  merges its own pull requests (the owner's report, not checked here; the kit
+  itself is design-only and runs nothing). How that runner's configuration
+  permits it is not known; a classifier change could stop its merges.
 - Two reported miss rates for the auto-mode classifier conflict and were not
   adjudicated; nothing in the design depends on either.
 - Whether a workflow in a pull request can forge a named check is untested
@@ -274,4 +276,4 @@ last resort, with the contract recorded in
 | Merge-time policy does not stop pre-merge execution | Same-repository workflows run from the merge commit with chosen permissions (**V**) | High |
 | Trusted signals unchanged | Statuses writable by any write token; check runs only by Apps; merge with evaluated head (**V**) | High on direction; the forging question is untested |
 | Process state outside content rules | Process state lives in the scheduler; no per-pull-request script found | Medium |
-| No boundary under one admin identity | Every separation found needs a second identity and a second approver (**V**) | High |
+| No boundary under one admin identity | Rules do not bind admins by default (**V**); every separation found relies on a second identity and a second approver (**I**, section 1); that one admin identity therefore keeps merge authority over every rule the kit sets, so no rule is a boundary (**I**) | Medium; the single-admin merge authority is **I** |
