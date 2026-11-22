@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agent-pipeline-gate: evaluate | replay | backtest | check-paths.
+// agent-pipeline-gate: evaluate | replay | backtest | check-paths | hook.
 import { readFile as fsReadFile, realpath } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ const USAGE = [
   '       agent-pipeline-gate replay   --repo OWNER/NAME --pr N --repo-dir DIR [--manifest FILE]',
   '       agent-pipeline-gate backtest --repo OWNER/NAME --repo-dir DIR --since ISO --until ISO [--base BRANCH] [--manifest FILE]',
   '       agent-pipeline-gate check-paths --repo OWNER/NAME --repo-dir DIR --base BRANCH --head SHA [--lane NAME] [--item ID] [--manifest FILE]',
+  '       agent-pipeline-gate hook --repo-dir DIR   (PreToolUse tool-call JSON on stdin)',
 ];
 
 const COMMANDS = {
@@ -21,9 +22,12 @@ const COMMANDS = {
   replay: { required: ['repo', 'pr', 'repo-dir'], optional: ['manifest'] },
   backtest: { required: ['repo', 'repo-dir', 'since', 'until'], optional: ['base', 'manifest'] },
   'check-paths': { required: ['repo', 'repo-dir', 'base', 'head'], optional: ['lane', 'item', 'manifest'] },
+  hook: { required: ['repo-dir'], optional: [] },
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+
+const isRepo = (repo) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo) && !repo.split('/').some((p) => p === '.' || p === '..');
 
 class UsageError extends Error {}
 
@@ -45,9 +49,7 @@ function parseArgs(argv) {
   for (const name of spec.required) {
     if (!Object.hasOwn(opts, name)) throw new UsageError(`missing option: --${name}`);
   }
-  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(opts.repo) || opts.repo.split('/').some((p) => p === '.' || p === '..')) {
-    throw new UsageError('--repo must be OWNER/NAME');
-  }
+  if (Object.hasOwn(opts, 'repo') && !isRepo(opts.repo)) throw new UsageError('--repo must be OWNER/NAME');
   if (Object.hasOwn(opts, 'pr') && !(/^[1-9]\d*$/.test(opts.pr) && Number.isSafeInteger(Number(opts.pr)))) {
     throw new UsageError('--pr must be a positive integer');
   }
@@ -211,9 +213,41 @@ async function runBacktest(opts, io, kit) {
   return 0;
 }
 
+const blockMerge = (io, message) => {
+  io.err(`merge blocked: ${message}`);
+  return 2;
+};
+
+// PreToolUse hook: allows the merge tool only when the gate says `merge` and the
+// call matches the verdict's merge object. Exit 2 blocks, so every failure blocks.
+async function runHook(opts, io) {
+  try {
+    const call = JSON.parse(await io.stdin());
+    if (typeof call?.tool_name !== 'string') return blockMerge(io, 'malformed tool call');
+    if (!call.tool_name.endsWith('__merge_pull_request')) return 0;
+    const t = call.tool_input;
+    const repo = typeof t?.owner === 'string' && typeof t?.repo === 'string' ? `${t.owner}/${t.repo}` : '';
+    if (!isRepo(repo)) return blockMerge(io, 'malformed tool input');
+    const { result } = await gate({ repo, prNumber: t.pullNumber, repoDir: opts['repo-dir'], callerLane: null, replay: false, manifestFile: null }, io);
+    if (result.verdict !== 'merge') {
+      const first = result.reasons[0];
+      return blockMerge(io, `verdict ${result.verdict}${first ? ` (${first.code}${first.detail === undefined ? '' : `: ${first.detail}`})` : ''}`);
+    }
+    const { method, expectedHeadSha, commitMessage } = result.merge;
+    if (t.expectedHeadSha !== expectedHeadSha) return blockMerge(io, `expectedHeadSha must be ${expectedHeadSha}`);
+    if (t.merge_method !== method) return blockMerge(io, `merge_method must be ${method}`);
+    if (typeof t.commit_message !== 'string' || !t.commit_message.split('\n').map((l) => l.replace(/\r$/, '')).includes(commitMessage)) {
+      return blockMerge(io, `commit_message must contain the line: ${commitMessage}`);
+    }
+    return 0;
+  } catch (error) {
+    return blockMerge(io, String(error?.message ?? error));
+  }
+}
+
 /**
  * @param {string[]} argv
- * @param {object} [overrides] test seams: collect, run, readFile, out, err, cliDir
+ * @param {object} [overrides] test seams: collect, run, readFile, stdin, out, err, cliDir
  * @returns {Promise<number>} the exit code
  */
 export async function main(argv, overrides = {}) {
@@ -221,6 +255,11 @@ export async function main(argv, overrides = {}) {
     collect: realCollect,
     run: realRun,
     readFile: (path) => fsReadFile(path, 'utf8'),
+    stdin: async () => {
+      const chunks = [];
+      for await (const chunk of process.stdin) chunks.push(chunk);
+      return Buffer.concat(chunks).toString('utf8');
+    },
     out: (line) => process.stdout.write(`${line}\n`),
     err: (line) => process.stderr.write(`${line}\n`),
     cliDir: dirname(fileURLToPath(import.meta.url)),
@@ -235,6 +274,7 @@ export async function main(argv, overrides = {}) {
     for (const line of USAGE) io.err(line);
     return 2;
   }
+  if (parsed.command === 'hook') return runHook(parsed.opts, io);
   const kit = await kitCommit(io.run, io.cliDir);
   if (parsed.command === 'check-paths') return runCheckPaths(parsed.opts, io, kit);
   if (parsed.command === 'backtest') return runBacktest(parsed.opts, io, kit);
