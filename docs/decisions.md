@@ -117,12 +117,15 @@ Why:
   above do harm before a replay or a revert can act: the night's later runs
   obey a merged rule change, the owner's next pull runs a merged hook, and a
   weakened oracle lets the rest of the night's merges pass on false evidence.
-- An allowlist is stricter than a denylist, so it fits the overlay step
-  (design section 10), which may only be stricter than today.
+- The overlay step (design section 10) requires both the old written rules
+  and the gate to allow a merge. An allowlist is not always stricter than a
+  denylist: a broad allowed directory may contain a held file, so each old
+  hold is checked for coverage or an explicit retirement at the switch (design
+  section 10).
 - Evidence from the backtests (private; aggregate only): a trial allowlist of
   four entries gave the same verdict on all ten inferred runner self-merges
-  of one consumer (the author's classification of the merge history; computed
-  from the backtest facts, not re-run through the kit), and
+  of the game consumer (the author's classification of the merge history;
+  computed from the backtest facts, not re-run through the kit), and
   the other consumer's backtest already ran as an allowlist.
 - Outside practice keeps a short list only as a backstop and allowlists safe
   change categories for automated landing (research note). The evidence is of
@@ -276,8 +279,9 @@ on a public repository can be switched off with one call. A separate agent
 identity is deferred; revisit it if the cloud runner can act as a separate
 identity (open question 31).
 
-Why: every published separation of agent and approver the research found
-depends on a distinct agent identity plus a second approver, and no published
+Why: the published separations of agent and approver the research found
+mostly depend on a distinct agent identity plus a second approver (a
+deploy-branch restriction is the exception), and no published
 account of a solo operator whose unattended agent merges its own pull
 requests was found (research note). The design stays a guardrail with
 detection.
