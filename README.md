@@ -91,7 +91,7 @@ stateDiagram-v2
 
 ### Repository layout
 
-The target includes planned hooks, bootstrap, and a shared runner procedure. The bootstrap checks that the pinned kit commit is reachable from the kit’s default branch before executing it, and the owner approves pin changes. Existing GitHub controls stay in force. The current CLI reads the manifest and returns verdicts.
+The target includes planned hooks, bootstrap, and a shared runner procedure. The bootstrap checks that the pinned kit commit is reachable from the kit’s default branch before executing it, and the owner approves pin changes. Keep the consumer as the sole attached repository for a hook-based session and fetch the public kit anonymously at its pin. Vendoring is the fallback if the cloud probe shows that fetch is unavailable. The public kit uses synthetic or public fixtures. Private consumer names, account and deployment settings, queue and report data, and secrets stay outside it. Existing GitHub controls stay in force. The current CLI reads the manifest and returns verdicts.
 
 ```mermaid
 flowchart TD
@@ -116,7 +116,7 @@ flowchart TD
 
 ### Shared policy and cutover
 
-The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. The current PR evaluator and future path check without a PR use the same policy. The planned runner hook uses a narrow subset of the floor for write and push checks.
+The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. Three readers share the kit floor and the consumer manifest: the current PR evaluator, the planned path check without a PR, and the planned runner hook. For write and push checks, the hook enforces only the floor patterns marked for that purpose.
 
 Start by backtesting and running the gate in shadow mode. During overlay, require both the existing rules and the gate to allow an unattended merge. Switch only after every existing hold has equivalent coverage or an explicit, recorded retirement, the path check without a PR exists, and the branch used to read policy is settled. Then replace duplicated rules with a pointer to the shared policy. [Historical path-check plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#10-slice-3-the-path-check-without-a-pull-request) · [Historical hook plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#11-slice-4-the-hook-reads-the-same-policy) · [Historical open questions](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/open-questions.md)
 
@@ -134,7 +134,7 @@ npm test
 ```
 
 - `evaluate` checks a live PR. Pass `--lane` for a caller lane. A configured queue lane is inferred from a `claude/item-<id>` head branch.
-- `replay` reconstructs a verdict for one merged PR. A caller lane is inferred from an exact `Auto-Merged-By:` line in the merge commit message that identifies one configured caller lane.
+- `replay` reconstructs a verdict for one merged PR. A caller lane is inferred from an exact `Auto-Merged-By:` line in the merge commit message that identifies one configured caller lane. Before cutover, configure every merging routine to stamp the lane of the PR it merges, including when another routine handles that lane.
 - `backtest` runs replay for PRs merged from `--since` inclusive to `--until` exclusive. The optional `--base` filters by target branch. It emits one JSON line per PR and a final summary. `anomalies` lists marked merges with a verdict other than `merge`, and `unmarkedNotMerge` lists such verdicts on unmarked merges. PRs whose evidence collection failed appear in both lists because their marker is unknown.
 
 `evaluate` and `replay` emit a JSON object and exit `0` for `merge` or `1` for any other verdict. `backtest` exits `0` after producing a summary even if it found anomalies, so inspect the JSON. It exits `1` if collecting the PR list fails. Invalid arguments exit `2`.
