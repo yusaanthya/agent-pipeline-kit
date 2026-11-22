@@ -21,7 +21,7 @@ GitHub setting.
 
 Why: the three consumers wrote the merge decision three ways, two of them as
 prose the agent judges; the three copies of the Codex gate script had already
-diverged into two versions with ten behavioural differences. Under the
+diverged into two versions with nine behavioural differences. Under the
 platform limits (same identity for agent and owner, no rulesets on private
 repositories on the free plan), making the judgement correct and consistent is
 worth more than isolating who presses merge.
@@ -177,7 +177,7 @@ Rejected because:
 ### Other rejected choices
 
 - **Copying the kit into each repository by default.** It recreates the drift
-  found in the audit (three gate copies, two versions, ten differences) and
+  found in the audit (three gate copies, two versions, nine differences) and
   keeps the gate's logic inside the repository the agent edits. Vendoring stays
   only as the fallback if a scheduled task cannot clone the kit.
 - **Attaching the kit to a session as a second repository.** A session with

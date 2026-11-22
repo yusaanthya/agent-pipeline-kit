@@ -84,7 +84,7 @@ flowchart TD
   g -->|"hold: owner"| o["Owner<br/>cloud or local session"]
   r -->|"round cap, or 6 h without progress"| d["Parked<br/>one question and a recommended answer"]
   d --> o
-  s -->|"passes; the gate runs again before the merge"| m
+  s -->|"review passes (the owner starting the loop is the confirmation); the gate runs again before the merge"| m
   o -->|"owner confirms; also through the gate"| m
   m --> desk["Morning desk<br/>replays the gate the next day"]
   desk -.->|"anomalies and to-do lists"| o
@@ -109,7 +109,7 @@ stateDiagram-v2
   Fixing --> Open: runner pushes a fix
   Fixing --> Owner: round cap, or 6 h without progress
   Open --> Strong: hold - strong review
-  Strong --> Merged: local review passes
+  Strong --> Merged: local review passes and the owner has started the loop
   Strong --> Strong: review worker pushes a fix, re-review
   Open --> Owner: hold - owner, FAILED prefix, or draft
   Owner --> Merged: owner confirms

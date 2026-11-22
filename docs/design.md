@@ -161,8 +161,11 @@ Lanes are declared in the manifest (section 6). There are two kinds:
 
 Resolution, failing closed:
 
-- The head branch matches the queue form: the lane is the queue lane. If a
-  caller lane is also passed and differs: `blocked:lane`.
+- The head branch matches the queue form and the manifest declares a queue
+  lane: the lane is the queue lane. If a caller lane is also passed and differs
+  from it: `blocked:lane`. A head branch in the queue form where the manifest
+  declares no queue lane is treated as not in the queue form: the resolution
+  continues with the next bullets.
 - Otherwise a caller lane is passed: it must name a caller lane of the
   manifest, else `blocked:lane`.
 - Otherwise there is no lane: `hold:owner`.
@@ -240,9 +243,14 @@ kit's choice of "common ecosystems"; extending it is a kit change.
 
 **Floor exception**: in the queue lane, the item's own report
 `.agent-line/reports/<id>.md`, with status added or modified and head mode
-`100644`, is not a floor path. Every runner pull request contains its report,
-so without this exception the floor would hold all of them. A deleted report,
-another item's report, or a report in a caller lane stays on the floor.
+`100644`, is not a floor path, and it is also exempt from the lane's
+`tier.auto` (allowlist) and `tier.strong_review` checks, so that a manifest
+need not list the report directory in an allowlist and a strong-review pattern
+cannot route every runner pull request away from `merge`. The manifest's
+`hold_paths`, the mode check and the NUL check still apply to it. Every runner
+pull request contains its report, so without this exception the floor would
+hold all of them. A deleted report, another item's report, or a report in a
+caller lane stays on the floor and under the tier checks.
 
 **Pattern syntax**: segments separated by `/`. A segment `**` matches zero or
 more whole segments; `*` inside a segment matches any characters except `/`.
@@ -305,7 +313,8 @@ Steps, first match wins, giving a state:
 7. Current findings: trusted, non-reply review comments whose
    `original_commit_id` is the head (never `commit_id`, which GitHub remaps
    after a push), plus findings taken from the bodies of trusted, non-pending
-   reviews whose `commit_id` is the head. A review body yields one finding per
+   reviews whose `commit_id` is the head. A review body that is empty or
+   whitespace-only yields no finding. Otherwise it yields one finding per
    line whose title starts with `[P` or `![P`; a body with no such line yields
    itself as one finding, unless it contains the receipt marker.
 8. A finding's priority is read only from its title (first line, HTML tags and
@@ -390,27 +399,30 @@ from a file passed to the CLI.
 ```json
 {
   "schema": 1,
-  "kit": "<40 lowercase hex: the kit commit this consumer pins>",
-  "checks": ["<check run name>", "..."],
+  "kit": "0123456789abcdef0123456789abcdef01234567",
+  "checks": ["check"],
   "codex_clean": "no_blocking",
-  "hold_paths": ["<pattern>", "..."],
+  "hold_paths": ["docs/private/**"],
   "lanes": {
-    "<lane name>": {
+    "runner": {
       "kind": "queue",
-      "base": "<branch name>",
+      "base": "preview",
       "auto_merge": true,
       "tier": {
-        "default": "auto",
-        "auto": ["<pattern>", "..."],
-        "strong_review": ["<pattern>", "..."]
+        "default": "hold",
+        "auto": ["src/**", "docs/**"],
+        "strong_review": []
       },
       "max_changed_lines": null,
-      "freeze_while_open": { "head": "<branch>", "base": "<branch>" },
-      "marker": "Auto-Merged-By: <consumer>-<lane>"
+      "freeze_while_open": { "head": "preview", "base": "main" },
+      "marker": "Auto-Merged-By: example-runner"
     }
   }
 }
 ```
+
+The values are illustrative. The example is valid against the table below, and
+a test reads this block and validates it.
 
 | Field | Rule | Requirement behind it |
 | --- | --- | --- |
@@ -423,7 +435,7 @@ from a file passed to the CLI.
 | `kind` | `queue` or `caller` | section 5.2 |
 | `base` | one branch name | one base per lane |
 | `auto_merge` | boolean | the consumers' switches for runner merging |
-| `tier.default` | `auto` or `hold` | allowlist for the public consumer and the routine; denylist for the game consumer, where a preview and the owner's promotion stand before production |
+| `tier.default` | `auto` or `hold` | allowlist for the routine; denylist for the game consumer, where a preview and the owner's promotion stand before production; the public consumer's choice is open (open question 3) |
 | `tier.auto` | patterns; required when `default` is `hold`, forbidden otherwise | the routine's allowlist |
 | `tier.strong_review` | patterns, may be empty | `hold:strong-review` routing; the lists are open question 5 |
 | `max_changed_lines` | positive integer or null | the routine's 150-line budget |
@@ -512,7 +524,8 @@ one step: run the gate before the merge. Because the gate has no input that
 records a passed strong review (an approval the agent could write would be an
 agent-writable input that enables a merge), a `hold:strong-review` or
 `hold:owner` verdict is resolved in the loop by the owner's confirmation, the
-same answer the hook's `ask` collects (open question 16).
+same answer the hook's `ask` collects: the owner starting the loop on that
+pull request is the confirmation (open question 16).
 
 ### 8.4 Morning desk
 
@@ -565,6 +578,11 @@ that stay true after the merge:
 | Halt | issues that carry `pipeline-halt` now and were open at the merge time; when the label was added or removed is not reconstructed (a limit) |
 | Freeze | pull requests with the freeze head and base that were open at the merge time; base retargeting is not reconstructed (a limit) |
 | Open state, `mergeable` | not evaluated (GitHub merged it) |
+
+Replay assumes that the pull request was merged by a squash or a merge commit.
+Rebase merges are unsupported: the first parent of a rebased commit is not the
+base tip at merge time, so the replay of such a merge is not meaningful and the
+kit does not detect or flag it.
 
 Replay output adds the merge commit, the marker line found in its message (or
 none), and every limit that applied. The marker is self-reported by whoever

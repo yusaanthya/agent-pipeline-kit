@@ -66,7 +66,7 @@ the listed fields are read.
  * @property {FileChange[]} files          merge-base..head, from git
  * @property {string} baseSha              live: tip of pr.baseRef; replay: first parent of the merge commit
  * @property {boolean} baseIsAncestor
- * @property {string|null} [queueItemText] present only when headRef matches QUEUE_BRANCH; null if the file is absent at baseSha
+ * @property {string|null} [queueItemText] present only when headRef matches QUEUE_BRANCH; null if the file is absent at baseSha; the core reads it only when the lane is the queue lane
  * @property {object[]} checkRuns          REST check runs on headSha: id, name, app.slug, status, conclusion, started_at, completed_at
  * @property {{comments: object[], reviewComments: object[], reviews: object[]}} codex
  *           REST issue comments (id, user.id, user.login, body, created_at, updated_at),
@@ -179,9 +179,11 @@ export function evaluate(input)          // input: GateInput -> Verdict
    null, adds `wait:halt`.
 2. `parseManifest(input.manifestText)`. On failure, return the halt reasons and
    the manifest reason; nothing else is evaluated.
-3. Resolve the lane (design 5.2). In replay with no queue branch and no
-   caller lane, the lane is the caller lane whose `marker` equals a line of
-   `mergeMessage` exactly; none matches: no lane.
+3. Resolve the lane (design 5.2). A head branch in the queue form counts only
+   when the manifest declares a queue lane; otherwise it is treated as not in
+   the queue form. In replay with no queue lane resolved and no caller lane,
+   the lane is the caller lane whose `marker` equals a line of `mergeMessage`
+   exactly; none matches: no lane.
 4. With a lane that has `freeze_while_open`: any pull request with that head
    and base, `headRepo` ignored, open at `t` (as in step 1) adds
    `wait:freeze`.
@@ -271,9 +273,9 @@ Replay mode (`replay: true`), differences:
 - After fetching, `baseSha` is `git rev-parse <merge_commit_sha>^1`, and the
   merge commit must be reachable from `<ns>/base`, else throw.
   `mergeMessage` is `git log -1 --format=%B <merge_commit_sha>`. This assumes
-  squash or merge-commit merges; for a rebase merge the first parent is not
-  the base tip at merge time (a limit, `rebase-merge-unsupported`, when the
-  merge commit has one parent and the pull request has several commits).
+  squash or merge-commit merges. Rebase merges are unsupported: the first
+  parent of a rebased commit is not the base tip at merge time, and the
+  collector does not detect or flag such a merge.
 - Manifest, without `manifestFile`: the blob at
   `git rev-list -1 --first-parent --before=<asOf> <ns>/trust`; add the limit
   `manifest-by-commit-date`.
@@ -372,8 +374,8 @@ head; no halt issues; no other pull requests.
 | 27 | head mode `120000`, `160000`, `100755`; status `T` | `hold:owner` | `mode` |
 | 28 | `headHasNul: true` | `hold:owner` | `binary` |
 | 29 | path in `hold_paths` | `hold:owner` | `hold-path` |
-| 30 | `tier.default: "hold"`, `tier.auto: ["src/**"]`, path `docs/a.md` | `hold:owner` | `not-in-allowlist` |
-| 31 | as 30 with path `src/a/b.go` | `merge` | |
+| 30 | `tier.default: "hold"`, `tier.auto: ["src/**"]`; the baseline's modified file replaced by `docs/a.md`; the added report `.agent-line/reports/sim-1.md` stays | `hold:owner` | `not-in-allowlist` (path `docs/a.md` only, not the report) |
+| 31 | as 30 with the modified file `src/a/b.go`; the report stays and is not in `tier.auto` | `merge` | the report is exempt from the allowlist |
 | 32 | path in `tier.strong_review` | `hold:strong-review` | `strong-review-path` |
 | 33 | a floor path that is also in `tier.strong_review` | `hold:owner` first, `hold:strong-review` also in reasons | |
 | 34 | `max_changed_lines: 150`, 150 lines | `merge` | |
@@ -400,6 +402,13 @@ head; no halt issues; no other pull requests.
 | 55 | replay: halt issue closed before `asOf`; opened after `asOf` | `merge` | |
 | 56 | any input: `evaluate` does not mutate it, and two calls give deep-equal results | | |
 | 57 | `merge` is null for every non-merge verdict in this table | | |
+| 58 | manifest with no queue lane and a caller lane `nightly`; head `claude/item-sim-1`; no caller lane passed | `hold:owner` | `no-lane` |
+| 59 | as 58 with the caller lane `nightly` passed, base matches | `merge` | the queue form is ignored |
+| 60 | as 58 with another caller lane name passed | `blocked:lane` | `unknown-lane` |
+| 61 | replay: as 58, `mergeMessage` contains `nightly`'s marker | lane resolved, `merge` | |
+| 62 | queue lane with `tier.strong_review: ["**/*.md"]`; the added report `.agent-line/reports/sim-1.md` | `merge` | the report is exempt from `strong_review` |
+| 63 | as 62 with `hold_paths: [".agent-line/reports/**"]` | `hold:owner` | `hold-path` (the exemption covers floor, allowlist and strong review only) |
+| 64 | as 62 with a second modified file `docs/a.md` | `hold:strong-review` | `strong-review-path` (path `docs/a.md` only) |
 
 ### 6.2 Codex parser (`test/core/codex.test.js`)
 
@@ -433,6 +442,7 @@ review-body parsing into the core.
 | C22 | replay: a P1 finding created after `asOf` | ignored | kit |
 | C23 | replay: trusted summary with `updated_at` after `asOf` | `editedAfterAsOf: true` | kit |
 | C24 | fixtures from quorum-election-simulator's public pull requests: one clean, one with P2/P3 only, one with P0 or P1 | `clean`, `advisory`, `blocking` | real output |
+| C25 | trusted `COMMENTED` review of the head whose body is empty, whitespace-only, or newlines only | `clean` (no finding) | both (`if (!body) return []`; the whitespace-only case follows the scripts' `trim()`) |
 
 `codexReason` tests: every cell of the design's mapping table, including the
 security review rows under `no_findings` (absent, `status` null, `running`,
@@ -441,7 +451,10 @@ effect under `no_blocking`.
 
 ### 6.3 Behavioural differences between the two Codex gate script variants
 
-The two variants differ in ten behaviours. The kit's choice for each:
+The two variants differ in nine behaviours (rows 1 to 9). Row 10 is not a
+difference between the variants: both treat P2 and P3 as advisory, and it
+records the stricter no-findings rule of another consumer. The kit's choice for
+each:
 
 | # | Behaviour | Public variant | Hardened variant | Kit | Why | Test |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -454,7 +467,7 @@ The two variants differ in ten behaviours. The kit's choice for each:
 | 7 | Finding without `original_commit_id` | ignored | error | error -> `blocked:codex` | fail closed on data the parser cannot place | C18 |
 | 8 | Concurrency key | per pull request | per SHA | not applicable | no state is written; the merge call carries the expected head SHA | verdict 1 |
 | 9 | Unsupported base | silent return | success marked "Not applicable" | `hold:owner` (`base-mismatch`) | a pull request outside its lane's base is the owner's | verdict 13 |
-| 10 | Strictness | P2/P3 advisory | P2/P3 advisory | `codex_clean` per manifest | the multi-repo routine requires no findings | 6.2 and `codexReason` tests |
+| 10 | Strictness (not a difference between the variants) | P2/P3 advisory | P2/P3 advisory | `codex_clean` per manifest | another consumer, the multi-repo routine, requires no findings | 6.2 and `codexReason` tests |
 
 ### 6.4 Checks of the multi-repo routine's bash gate script
 
@@ -541,7 +554,7 @@ must be mergeable (verdict 46, 47).
 
 1. `package.json`, constants, `glob.js` with its tests.
 2. `manifest.js`, `queue.js` with tests.
-3. `codex.js`: port the parser with tests C1 to C24.
+3. `codex.js`: port the parser with tests C1 to C25.
 4. `verdict.js` with the table of 6.1.
 5. `parse.js`, `proc.js`, `github.js`, `git.js`, `collect.js` with tests.
 6. `cli.js` with tests.
