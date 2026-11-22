@@ -2,6 +2,124 @@
 
 A command-line merge gate for coding-agent pipelines on GitHub. It evaluates a pull request against repository policy, GitHub Actions checks, and Codex review evidence for the PR head. Use it before a merge or to audit merged pull requests.
 
+## Migration target
+
+These diagrams record the workflow that consumer repositories are moving toward. The first shows where they started.
+
+### Before migration
+
+Three runners made merge decisions independently.
+
+```mermaid
+flowchart TD
+  subgraph MR["Multi-repo maintenance routine"]
+    direction TB
+    h1["Procedure text classifies the PR"] --> h2["Agent decides whether to call<br/>a bash gate script"] --> h3["Agent merges"]
+  end
+  subgraph GR["Game repo runner, merges into a preview branch"]
+    direction TB
+    i1["Prose merge conditions in the runner spec<br/>the agent judges them"] --> i3["Agent merges"]
+  end
+  subgraph QR["quorum-election-simulator runner"]
+    direction TB
+    q1["Prose merge conditions in the runner spec<br/>the agent judges them"] --> q3["Agent merges"]
+  end
+```
+
+### Shared gate
+
+The caller runs the gate and handles the verdict. A `merge` verdict lets the caller proceed through its normal permission checks. The hook is a planned adapter. Use an explicit procedure call in environments where the hook probe cannot establish reliable coverage.
+
+```mermaid
+flowchart TD
+  call["Any session wants to merge"] --> gate{"gate<br/>one tested program"}
+  gate -->|"merge"| pass["Normal permission handling<br/>and classifier still apply"] --> done["Merge as the owner<br/>deploys fire as today"]
+  gate -->|"hold"| hold["Runner: denied, left for the owner<br/>Interactive: ask the owner"]
+  gate -->|"fix / update / wait / blocked"| deny["Runner: denied with the reason<br/>Interactive: ask recommended, not decided"]
+  how["Who runs the gate<br/>single-repo session: PreToolUse hook<br/>multi-repo session and Codex: procedure call"] -.-> gate
+```
+
+### Workflow
+
+The night runner, local review loop, and owner session share the gate. Keep one existing runner per queue. The caller reruns `evaluate` after review or owner confirmation and immediately before merging, then requires the merge to match the reviewed head SHA. Owner confirmation and strong review resolve holds in the owner-directed path. Unattended merges require a `merge` verdict. The operator schedules morning replay. Direct-push detection and GitHub control drift checks are planned.
+
+```mermaid
+flowchart TD
+  q["Queue item<br/>enters only through an owner-merged PR"] --> r["Night runner<br/>claims, implements, runs its own critic"]
+  r --> pr["PR"]
+  pr --> ci["CI and native Codex review<br/>on GitHub"]
+  ci --> g{"gate"}
+  g -->|"fix: go back and fix"| r
+  g -->|"merge"| m["Merged"]
+  g -->|"hold: strong review"| s["Local strong-model review<br/>review loop started by the owner"]
+  g -->|"hold: owner"| o["Owner<br/>cloud or local session"]
+  r -->|"round cap, or 6 h without progress"| d["Parked<br/>one question and a recommended answer"]
+  d --> o
+  s -->|"Owner-directed merge after review and gate rerun"| m
+  o -->|"Owner confirms and reruns the gate"| m
+  m --> desk["Morning desk<br/>replays the gate the next day"]
+  desk -.->|"anomalies and to-do lists"| o
+```
+
+**Pull request states in the target workflow.** These transitions describe actions taken by the caller and owner. The diagram omits `update:base` and `blocked:*`.
+
+```mermaid
+stateDiagram-v2
+  state "Open" as Open
+  state "Waiting" as Waiting
+  state "Fixing" as Fixing
+  state "Awaiting strong review" as Strong
+  state "Awaiting owner" as Owner
+  state "Merged" as Merged
+  state "Closed" as Closed
+  [*] --> Open
+  Open --> Waiting: CI or Codex not finished
+  Waiting --> Open: results arrive
+  Open --> Fixing: fix - CI failed or Codex P0 or P1
+  Fixing --> Open: runner pushes a fix
+  Fixing --> Owner: round cap, or 6 h without progress
+  Open --> Strong: hold - strong review
+  Strong --> Merged: owner-directed merge after review and gate rerun
+  Strong --> Strong: review worker pushes a fix, re-review
+  Open --> Owner: hold - owner, FAILED prefix, or draft
+  Owner --> Merged: owner confirms and reruns the gate
+  Owner --> Closed: owner rejects
+  Open --> Merged: merge - auto tier
+  Merged --> [*]
+  Closed --> [*]
+```
+
+### Repository layout
+
+The target includes planned hooks, bootstrap, and a shared runner procedure. The bootstrap checks that the pinned kit commit is reachable from the kit’s default branch before executing it, and the owner approves pin changes. Existing GitHub controls stay in force. The current CLI reads the manifest and returns verdicts.
+
+```mermaid
+flowchart TD
+  subgraph KIT["agent-pipeline-kit, public, one copy"]
+    k["Gate library and tests<br/>hook script<br/>generic runner procedure<br/>queue and report formats, templates"]
+  end
+  subgraph REPO["Each consumer repository keeps only"]
+    m1["manifest<br/>pins a kit commit"]
+    m2["rules.md<br/>this repository's own rules"]
+    m3["hook settings and bootstrap"]
+    m4["queue and reports"]
+  end
+  subgraph RUN["When a scheduled task runs"]
+    rd["Read the manifest"] --> ft["Fetch the kit at the pinned commit"] --> go["Follow the generic procedure plus rules.md"]
+  end
+  k -.->|"referenced by commit SHA"| m1
+  m1 --> rd
+  m2 --> go
+  m3 -->|"runs the gate on a merge call"| go
+  go -->|"writes"| m4
+```
+
+### Shared policy and cutover
+
+The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. The current PR evaluator and future path check without a PR use the same policy. The planned runner hook uses a narrow subset of the floor for write and push checks.
+
+Start by backtesting and running the gate in shadow mode. During overlay, require both the existing rules and the gate to allow an unattended merge. Switch only after every existing hold has equivalent coverage or an explicit, recorded retirement, the path check without a PR exists, and the branch used to read policy is settled. Then replace duplicated rules with a pointer to the shared policy. [Historical path-check plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#10-slice-3-the-path-check-without-a-pull-request) · [Historical hook plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#11-slice-4-the-hook-reads-the-same-policy) · [Historical open questions](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/open-questions.md)
+
 ## Run the gate
 
 Use Node.js 22 or newer, Git, and an authenticated GitHub CLI (`gh`) with read access to the target repository. Use a trusted local clone of the target repository with `origin` pointing to that same repository and enough history to resolve the relevant commits. There are no npm dependencies to install.
