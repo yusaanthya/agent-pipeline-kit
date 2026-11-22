@@ -154,7 +154,7 @@ secrets and needs none.
 | --- | --- |
 | Design, threat model, decisions, open questions, platform facts, implementation plan, research note | Written (this directory's `docs/`) |
 | Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the design](docs/design.md); tests in `test/core/` |
-| Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners |
+| Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners, plus a smoke test of `evaluate` against real `git` with a local bare remote (`test/smoke/`) |
 | Content rules in the manifest (slice 2) | Implemented in `src/core/content.js`, evaluated by the verdict function; the collector reads the blobs; specified in [the design](docs/design.md#541-content-rules) |
 | The path check without a pull request, and the hook's reading of the same policy | Specified in [the design](docs/design.md); slices 3 and 4 of [the implementation plan](docs/implementation-plan.md); not implemented |
 | PreToolUse hook adapter and bootstrap | Specified in [the design](docs/design.md) only; a later slice |
