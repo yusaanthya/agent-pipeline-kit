@@ -61,6 +61,11 @@ export const FLOOR = Object.freeze([
 // Largest blob a content rule reads (design 5.4.1, "Readable"): 1 MiB.
 export const CONTENT_MAX_BYTES = 1048576;
 
+// Deepest nesting of a JSON file that `keys_only` reads (design 5.4.1,
+// "Readable"). JSON.parse recurses, and how deep it can go depends on the
+// stack left at the call, so a fixed cap keeps live and replay in agreement.
+export const JSON_MAX_DEPTH = 512;
+
 export const HALT_LABEL = 'pipeline-halt';
 
 export const QUEUE_BRANCH = /^claude\/item-([a-z0-9][a-z0-9-]*)$/;

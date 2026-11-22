@@ -1,7 +1,7 @@
 // Content rules (design 5.4.1, implementation plan section 9). Pure: no I/O,
 // no clock, no randomness. A content rule can only add a hold, and no reason
 // it returns carries text from a file.
-import { CONTENT_MAX_BYTES } from './constants.js';
+import { CONTENT_MAX_BYTES, JSON_MAX_DEPTH } from './constants.js';
 import { matches } from './glob.js';
 
 /**
@@ -49,6 +49,19 @@ export function matchLine(pattern, line) {
   return line.includes(literal);
 }
 
+// Line separators that common readers honour but splitLines does not split at:
+// a carriage return that does not end a CRLF, VT, FF, NEL, LS and PS. One
+// trailing "\r" of a "\n"-terminated line is the CRLF ending and is allowed.
+// Such a character can hide a guarded line behind what looks like a new line.
+const SEPARATORS = new Set(['\u000B', '\u000C', '\u0085', '\u2028', '\u2029']);
+function hasHiddenSeparator(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (SEPARATORS.has(c) || (c === '\r' && text[i + 1] !== '\n')) return true;
+  }
+  return false;
+}
+
 function countMatching(pattern, text) {
   const counts = new Map();
   if (text === null) return counts;
@@ -92,11 +105,15 @@ function canonicalNumber(token) {
   const match = NUMBER.exec(token);
   if (match === null) throw new Error('not a JSON number');
   const [, sign, int, frac = '', exp = '0'] = match;
-  let digits = int + frac;
-  let point = BigInt(int.length) + BigInt(exp);
-  const lead = digits.length - digits.replace(/^0+/, '').length;
-  digits = digits.slice(lead).replace(/0+$/, '');
-  point -= BigInt(lead);
+  const all = int + frac;
+  // Linear trims: a regular expression such as /0+$/ is quadratic on a long
+  // run of zeros that does not end the text.
+  let start = 0;
+  let end = all.length;
+  while (start < end && all.charCodeAt(start) === 48) start += 1;
+  while (end > start && all.charCodeAt(end - 1) === 48) end -= 1;
+  const digits = all.slice(start, end);
+  const point = BigInt(int.length) + BigInt(exp) - BigInt(start);
   if (digits === '') return '0';
   return `${sign}${digits}e${point}`;
 }
@@ -110,6 +127,25 @@ function reviveNumber(key, value, context) {
   const exact = canonicalNumber(context.source);
   if (!Number.isFinite(value)) return new LossyNumber(exact);
   return exact === canonicalNumber(String(value)) ? value : new LossyNumber(exact);
+}
+
+// Whether containers are nested deeper than JSON_MAX_DEPTH. Brackets inside
+// strings do not count. Safe on any text: it only reads, and stops at the cap.
+function tooDeep(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '"') {
+      i += 1;
+      while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1;
+    } else if (c === '{' || c === '[') {
+      depth += 1;
+      if (depth > JSON_MAX_DEPTH) return true;
+    } else if ((c === '}' || c === ']') && depth > 0) {
+      depth -= 1;
+    }
+  }
+  return false;
 }
 
 // Whether any object of a text that is already valid JSON has a key twice.
@@ -147,14 +183,17 @@ function hasDuplicateKey(text) {
 }
 
 /**
- * JSON whose top level is an object, without a byte-order mark and without a
- * duplicate key at any depth. A tokenizer finds the duplicate keys; JSON.parse
+ * JSON whose top level is an object, nested at most JSON_MAX_DEPTH deep,
+ * without a byte-order mark and without a duplicate key at any depth. A tokenizer finds the duplicate keys; JSON.parse
  * parses the values.
  * @param {string} text
  * @returns {{ok: true, value: object} | {ok: false}}
  */
 export function parseStrictJson(text) {
   if (typeof text !== 'string' || text.charCodeAt(0) === 0xFEFF) return { ok: false };
+  // JSON.parse recurses and its limit depends on the stack left, so a fixed
+  // cap is checked first: live and replay then read the same files.
+  if (tooDeep(text)) return { ok: false };
   let value;
   try {
     value = JSON.parse(text, reviveNumber);
@@ -195,6 +234,19 @@ function sameValue(a, b) {
   return true;
 }
 
+const LEADING_SPACE = new Set([' ', '\t', '\r', '\n', '\u000B', '\u000C', '\u0085', '\u2028', '\u2029']);
+
+// A text whose first line is not the opener but that, after leading
+// whitespace, begins with `---` and a line end: a reader that skips the
+// whitespace sees front matter, so it is malformed, not "no front matter".
+function looksLikeIndentedOpener(text) {
+  let i = 0;
+  while (i < text.length && LEADING_SPACE.has(text[i])) i += 1;
+  if (!text.startsWith('---', i)) return false;
+  const next = text[i + 3];
+  return next === undefined || next === '\n' || next === '\r' || SEPARATORS.has(next);
+}
+
 const KEY_LINE = /^[A-Za-z0-9_][A-Za-z0-9_-]*:/;
 
 /**
@@ -206,7 +258,8 @@ const KEY_LINE = /^[A-Za-z0-9_][A-Za-z0-9_-]*:/;
  */
 export function readFrontMatter(text) {
   const blocks = new Map();
-  if (text === null || !text.startsWith('---')) return { ok: true, blocks };
+  if (text === null) return { ok: true, blocks };
+  if (!text.startsWith('---')) return looksLikeIndentedOpener(text) ? { ok: false } : { ok: true, blocks };
   // Raw lines: the carriage-return rule is checked before any CR is removed.
   const lines = text.split('\n');
   if (lines[0] !== '---') return { ok: false };
@@ -328,8 +381,10 @@ function entryReasons(rules, f, contents) {
   }
   const unreadable = anyUnreadable(sides);
 
+  // Type 2 also reads a side with a hidden separator as unreadable.
+  const hidden = lineRules.length > 0 && !unreadable && (hasHiddenSeparator(textOf(sides.base) ?? '') || hasHiddenSeparator(textOf(sides.head) ?? ''));
   for (const rule of lineRules) {
-    if (unreadable) reasons.push(hold(f, 'rule-line-change', 'unreadable'));
+    if (unreadable || hidden) reasons.push(hold(f, 'rule-line-change', 'unreadable'));
     else if (changedLines(rule.pattern, textOf(sides.base), textOf(sides.head))) reasons.push(hold(f, 'rule-line-change', 'line-changed'));
   }
 

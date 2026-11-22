@@ -7,7 +7,8 @@ is a bug in this plan. The hook adapter, bootstrap, manifest templates and
 runner procedure are **not** part of Phase 1. Sections 1 to 8 are Phase 1.
 Sections 9 to 11 are the slices after it (content rules in the core, the path
 check without a pull request, and the hook's reading of the same policy); each
-starts after the previous one is merged, and none of them is implemented yet.
+starts after the previous one is merged. Slice 2 (section 9) is implemented;
+sections 10 and 11 are not.
 
 Constraints: Node.js 22, ESM, no runtime dependencies, tests with `node:test`
 and `node:assert/strict`. The core (`src/core/`) is pure: no I/O, no clock, no
@@ -511,7 +512,7 @@ with it and are not part of Phase 1.
 | G20 | a JSON manifest may change only its version field | content rule `keys_only` | slice 2, K-rows |
 | G21 | non-Markdown file outside the allowlist | allowlist | verdict 30 |
 | G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | content rule `front_matter_only`; a leading BOM makes the file unreadable and holds | slice 2, F-rows |
-| G23 | CR line endings and byte-order marks in Markdown | a leading BOM is covered by readability for every matched file and the front-matter part by `front_matter_only`; carriage returns outside the front matter are a follow-up (design section 11) | slice 2, F-rows and B-rows |
+| G23 | CR line endings and byte-order marks in Markdown | a leading BOM is covered by readability for every matched file and the front-matter part by `front_matter_only`; carriage returns and other hidden line separators make a type 2 file unreadable (B-rows), and a whole-file rule beyond that is a follow-up (design section 11) | slice 2, F-rows and B-rows |
 | G24 | 150-line budget | `max_changed_lines` | verdict 34, 35 |
 | G25 | triage edits only two sections of the backlog; no heading or preamble change | consumer (the first candidate for `extra_check` or a fifth rule type) | none |
 | G26 | backlog file turned into a symlink | status `T`, `hold:owner` (`mode`) | verdict 27 |
@@ -585,7 +586,7 @@ follow-ups.
 
 ## 9. Slice 2: content rules in the core
 
-Behaviour: [design 5.4.1](design.md#541-content-rules-later-slice) and section
+Behaviour: [design 5.4.1](design.md#541-content-rules) and section
 6. Same constraints as Phase 1: the core is pure (no I/O, no clock, no
 randomness), no dependencies, tests with `node:test`, each test written before
 the code it tests. The schema stays version 1: `content_rules` is an optional
@@ -634,7 +635,11 @@ collector, decides readability: size over the cap (`bytes: null`), invalid
 UTF-8, a NUL byte or a leading U+FEFF is unreadable. Decoding uses
 `new TextDecoder('utf-8', {fatal: true, ignoreBOM: true})`: with the default
 `ignoreBOM: false` the decoder would silently drop a leading byte-order mark,
-and the readability check must see it. A target path missing from `contents`,
+and the readability check must see it. Two types add a condition of their own
+(design 5.4.1): a type 2 side with a hidden line separator (a `\r` that does
+not end a CRLF, U+000B, U+000C, U+0085, U+2028, U+2029) is unreadable, and
+type 3 JSON nested deeper than `JSON_MAX_DEPTH` (512, in `constants.js`) is
+unreadable; the depth is counted before `JSON.parse`. A target path missing from `contents`,
 a side given as `absent` where the status says it exists (base of `M` and `D`,
 head of `A` and `M`), or a side given as `present` where the status says it is
 absent, gives `blocked:input` (`content-missing`).
@@ -682,7 +687,7 @@ Manifest (`manifest.test.js`):
 | M5 | `hold_on_add_delete` entry that is not a string; any glob invalid under section 5.4 | invalid |
 | M6 | pattern empty, `^`, `$`, `^$`, not a string | invalid |
 | M7 | `keys` empty, with a duplicate, with an empty string, with a non-string | invalid |
-| M8 | the `content_rules` fragment of the design merged into the example block | valid |
+| M8 | the design's example block, which carries all four rule types | valid, with `content_rules` present |
 
 Line helpers (`content.test.js`):
 
@@ -712,7 +717,7 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | F2 | `front_matter_only` | an unnamed key's value changed; its list-form continuation lines changed; a key added; a key removed | `rule-front-matter` (front-matter-changed) |
 | F3 | `front_matter_only` | body edited only, front matter identical; neither side has front matter | none |
 | F4 | `front_matter_only` | head opener `--- `, `---yaml`, `----`; CRLF opener; no closing `---`; a `\r` inside; a comment line at column 0; a quoted key; a repeated key; a stray line before the first key | `rule-front-matter` (front-matter-invalid) |
-| F5 | `front_matter_only` | a leading form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-changed): the keys vanished |
+| F5 | `front_matter_only` | a leading form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-invalid): whitespace before the opener is malformed (changed by B3; it was front-matter-changed when a form feed read as "no front matter") |
 | F6 | `front_matter_only` | base ill-formed, head identical | `rule-front-matter` (front-matter-invalid) |
 | F7 | `front_matter_only` | added file with only named keys; added file with another key; deleted file with another key | none; `front-matter-changed`; `front-matter-changed` |
 | B1 | `front_matter_only`, keys `["description"]` | an added file whose head is U+FEFF, `---\nname: x\n---\n` | `rule-front-matter` (unreadable) |
@@ -721,6 +726,14 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | B4 | `keys_only` | a head that begins with U+FEFF | `rule-keys` (unreadable) |
 | B5 | all | a U+FEFF that is not at the start of the file | readable: evaluated as text |
 | F8 | `front_matter_only` | unreadable blob | `rule-front-matter` (unreadable) |
+| B6 | `hold_on_line_change`, pattern `^Status:` | base `Title\nStatus: draft\n`, head `Title\rStatus: approved\nStatus: draft\n`; the same with U+000B, U+000C, U+0085, U+2028, U+2029 in place of `\r`; each at the base only; in an added and in a deleted file | `rule-line-change` (unreadable) |
+| B7 | `hold_on_line_change` | CRLF endings (`Status: a\r\n`) | readable: no reason, or `line-changed` where a matching line differs |
+| B8 | `hold_on_line_change` | `a\r\r\nb` (one `\r` remains after the CRLF); a last line `b\r` with no `\n` | `rule-line-change` (unreadable): only one `\r` of a `\n`-terminated line is removed |
+| B9 | `front_matter_only`, keys `["description"]` | an added file `\n---\nname: x\n---\n`; a space, tab, `\r`, U+000B, U+000C, U+0085, U+2028 or U+2029 before `---`; the same on the base side | `rule-front-matter` (front-matter-invalid) |
+| B10 | `front_matter_only` | text that begins, after whitespace, with `---` not followed by a line end (`\n----`, ` --- x`), a rule line later in the file, or only whitespace | no front matter: none |
+| B11 | `keys_only`, `hold_on_line_change`, `front_matter_only` | a line separator inside a JSON string, inside the body of a Markdown file | readable under types 3 and 4: evaluated as text |
+| J1 | `keys_only` | JSON nested exactly `JSON_MAX_DEPTH` (512) deep, as objects and as arrays; one level deeper; the result when called from a deeply nested call stack; brackets inside strings | readable; `rule-keys` (unreadable); identical to the shallow call; not counted |
+| J2 | `keys_only` | a number token of about 1 MiB (`1`, zeros, `1`) under a named and an unnamed key, a long fraction, a long exponent, and long runs of zeros in a front matter, a line and a JSON string | evaluated in well under 2 s with the correct verdict (no quadratic regular expression) |
 | X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T` with head mode `100644` (a symlink turned into a regular file); status `T` with head mode `120000`; head mode `100755`, `120000` or `160000` with status `A` or `M`; a type 1 glob only; no rules | the matching paths; excluded; excluded; excluded; empty; empty |
 | X2 | all | a target path missing from `contents`; a side `absent` for status `M`; the head side `absent` for status `A`; the base side `present` for status `A`; the head side `present` for status `D` | `blocked:input` (`content-missing`) |
 | X3 | all | no reason contains any text of any file, for every row above | holds |
@@ -762,7 +775,8 @@ Collector (`collect.test.js`):
    the parser change that accepts the key.
 4. `collect.js` with rows C1 to C5.
 5. Add the `content_rules` fragment to the design's example block, so that the
-   existing example test covers it.
+   existing example test covers it (done: the example block carries the
+   fragment, and M8 reads that single block).
 
 ## 10. Slice 3: the path check without a pull request
 

@@ -155,7 +155,8 @@ secrets and needs none.
 | Design, threat model, decisions, open questions, review brief, implementation plan, research note | Written (this directory's `docs/`) |
 | Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the implementation plan](docs/implementation-plan.md); tests in `test/core/` |
 | Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners |
-| Content rules in the manifest, the path check without a pull request, and the hook's reading of the same policy | Specified in [the design](docs/design.md); slices 2 to 4 of [the implementation plan](docs/implementation-plan.md#9-slice-2-content-rules-in-the-core); not implemented |
+| Content rules in the manifest (slice 2) | Implemented in `src/core/content.js`, evaluated by the verdict function; the collector reads the blobs; specified in [the design](docs/design.md#541-content-rules) and [the implementation plan](docs/implementation-plan.md#9-slice-2-content-rules-in-the-core) |
+| The path check without a pull request, and the hook's reading of the same policy | Specified in [the design](docs/design.md); slices 3 and 4 of [the implementation plan](docs/implementation-plan.md); not implemented |
 | PreToolUse hook adapter and bootstrap | Specified in [the design](docs/design.md) only; a later slice |
 | Phase 0 hook checks | A reviewed kit in `probes/phase0/`; never run |
 | Manifest file format, `rules.md` and onboarding templates | Specified in the design; the on-disk format is an [open question](docs/open-questions.md); a later slice |

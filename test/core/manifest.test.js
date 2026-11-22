@@ -263,14 +263,12 @@ test('content_rules is not accepted below the top level', () => {
   assert.equal(parse(change((m) => { m.lanes.runner.content_rules = {}; })).ok, false);
 });
 
-test('M8: the content_rules fragment of the design merged into the example is valid', () => {
+test('M8: the example block of the design carries all four rule types and is valid', () => {
   const design = readFileSync(new URL('../../docs/design.md', import.meta.url), 'utf8');
   const blocks = [...design.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
   const example = JSON.parse(blocks.find((b) => b.includes('"schema": 1')));
-  const fragment = blocks.map((b) => JSON.parse(b)).find((b) => Object.hasOwn(b, 'content_rules') && !Object.hasOwn(b, 'schema'));
-  const merged = { ...example, ...(fragment ?? {}) };
-  assert.ok(merged.content_rules, 'the design shows content_rules in the example or in a fragment');
-  const result = parse(merged);
+  assert.deepEqual(Object.keys(example.content_rules).sort(), ['front_matter_only', 'hold_on_add_delete', 'hold_on_line_change', 'keys_only']);
+  const result = parse(example);
   assert.deepEqual(result.ok === false ? result.errors : [], []);
   assert.equal(result.ok, true);
 });
