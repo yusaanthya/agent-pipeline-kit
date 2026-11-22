@@ -152,7 +152,7 @@ secrets and needs none.
 
 | Piece | State |
 | --- | --- |
-| Design, threat model, decisions, open questions, review brief, implementation plan, research note | Written (this directory's `docs/`) |
+| Design, threat model, decisions, open questions, platform facts, implementation plan, research note | Written (this directory's `docs/`) |
 | Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the implementation plan](docs/implementation-plan.md); tests in `test/core/` |
 | Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners |
 | Content rules in the manifest (slice 2) | Implemented in `src/core/content.js`, evaluated by the verdict function; the collector reads the blobs; specified in [the design](docs/design.md#541-content-rules) and [the implementation plan](docs/implementation-plan.md#9-slice-2-content-rules-in-the-core) |
@@ -175,7 +175,7 @@ docs/design.md               canonical design: verdicts, inputs, trust, invocati
 docs/threat-model.md         threats, what is and is not protected, residual gaps
 docs/decisions.md            dated owner decisions and rejected designs
 docs/open-questions.md       unsettled items, kit-level or per-repository
-docs/review-brief.md         brief for an external reviewer of the current change
+docs/platform-facts.md       platform behaviour the design depends on, with verification status
 docs/implementation-plan.md  module layout, signatures, data shapes, CLI contract, tests, later slices
 docs/research/               outside practice behind the path, signal and extension design
 probes/phase0/               reviewed, never-run kit for the hook checks of design section 8.5

@@ -9,7 +9,7 @@ behaviour, not code that exists. The slices are listed in
 [the implementation plan](implementation-plan.md#9-slice-2-content-rules-in-the-core).
 Facts about GitHub, Claude Code and Codex that the design depends on are
 listed with their verification status in
-[the review brief](review-brief.md#platform-facts); the outside practice that
+[the platform facts](platform-facts.md); the outside practice that
 informed the path, signal and extension design is summarised in
 [the research note](research/2026-11-policy-shape.md).
 
@@ -324,8 +324,8 @@ Every other character is literal. A manifest pattern containing `?`, `[`, `]`,
 This is the subset the consumers' current path lists use. Paths and patterns
 are compared after lowercasing both, so a path that differs from a listed one
 only by case matches the same entries (for a hold this only holds more; for an
-allowlist entry it allows a case variant of an allowed path, which is
-recorded in the review brief as a question).
+allowlist entry it allows a case variant of an allowed path; see R9 of
+[open questions](open-questions.md)).
 
 #### 5.4.1 Content rules
 

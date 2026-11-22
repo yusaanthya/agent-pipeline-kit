@@ -44,7 +44,7 @@ recommended it because a merge there deploys production; a continuity critic
 had pointed out it is a behaviour change. The overlay step keeps the old
 rules in force, and each old hold is checked at the switch (design section
 10). The trial evidence for the allowlist form comes from a different
-consumer, not this one (see the review brief). The entries are chosen at this
+consumer, not this one (decision 2026-11-22). The entries are chosen at this
 consumer's migration from its backtest.
 
 **4. Interactive behaviour on `fix`, `update`, `wait` and `blocked`.**
@@ -316,3 +316,6 @@ real run, or belongs to a later slice, so it is recorded here and not fixed.
   output; none is an unmodified capture.
 - **R8. CI actions are referenced by tag, not by commit.** The workflow has
   read-only permission.
+- **R9. Allowlist matching ignores case.** A case variant of an allowed path
+  is allowed. It matters only on a case-sensitive checkout, and no consumer
+  has such a pair of paths.
