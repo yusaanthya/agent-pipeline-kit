@@ -1,6 +1,7 @@
 // Smoke test of examples/hook-bootstrap.mjs against real git, with local repositories
 // standing in for the consumer's origin and the kit's public remote (no network).
-// The kit's cli.js is a stub that reports which commit it came from.
+// The kit's cli.js is a stub that reports which commit it came from. It is written as
+// CommonJS (no top-level await) so it runs the same whether Node treats it as CJS or ESM.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -15,7 +16,7 @@ const identity = {
   GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
 };
 const bootstrap = new URL('../../examples/hook-bootstrap.mjs', import.meta.url).pathname;
-const stub = (name, code) => `let s = ''; for await (const c of process.stdin) s += c;\nprocess.stderr.write('${name} ' + process.argv.slice(2).join(' ') + ' ' + s);\nprocess.exitCode = s.includes('block') ? 2 : ${code};\n`;
+const stub = (name, code) => `const s = require('fs').readFileSync(0, 'utf8');\nprocess.stderr.write('${name} ' + process.argv.slice(2).join(' ') + ' ' + s);\nprocess.exitCode = s.includes('block') ? 2 : ${code};\n`;
 
 let saved;
 let root;
