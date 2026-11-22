@@ -30,7 +30,7 @@ Read this before anything else.
   replay detects merges that should not have happened. The design names every
   known way around it ([threat model](docs/threat-model.md)).
 - What would make it a boundary (a separate GitHub identity for the agent) is
-  listed as an optional upgrade, not built.
+  listed as an optional upgrade, deferred and not built.
 
 ## How the pieces fit
 
@@ -151,10 +151,12 @@ secrets and needs none.
 
 | Piece | State |
 | --- | --- |
-| Design, threat model, decisions, open questions, review brief, implementation plan | Written (this directory's `docs/`) |
+| Design, threat model, decisions, open questions, review brief, implementation plan, research note | Written (this directory's `docs/`) |
 | Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the implementation plan](docs/implementation-plan.md); tests in `test/core/` |
 | Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners |
+| Content rules in the manifest, the path check without a pull request, and the hook's reading of the same policy | Specified in [the design](docs/design.md); slices 2 to 4 of [the implementation plan](docs/implementation-plan.md#9-slice-2-content-rules-in-the-core); not implemented |
 | PreToolUse hook adapter and bootstrap | Specified in [the design](docs/design.md) only; a later slice |
+| Phase 0 hook checks | A reviewed kit in `probes/phase0/`; never run |
 | Manifest file format, `rules.md` and onboarding templates | Specified in the design; the on-disk format is an [open question](docs/open-questions.md); a later slice |
 | Generic runner procedure | Not specified here yet; a later slice |
 
@@ -171,8 +173,10 @@ docs/design.md               canonical design: verdicts, inputs, trust, invocati
 docs/threat-model.md         threats, what is and is not protected, residual gaps
 docs/decisions.md            dated owner decisions and rejected designs
 docs/open-questions.md       unsettled items, kit-level or per-repository
-docs/review-brief.md         brief for an external reviewer of Phase 1
-docs/implementation-plan.md  module layout, signatures, data shapes, CLI contract, tests
+docs/review-brief.md         brief for an external reviewer of the current change
+docs/implementation-plan.md  module layout, signatures, data shapes, CLI contract, tests, later slices
+docs/research/               outside practice behind the path, signal and extension design
+probes/phase0/               reviewed, never-run kit for the hook checks of design section 8.5
 ```
 
 ```text

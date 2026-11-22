@@ -2,8 +2,11 @@
 
 Dated owner decisions for the kit, and the designs that were rejected, with
 the concrete reasons, so that a reviewer does not re-propose them. A design
-was reviewed in three rounds by independent critics before these decisions.
-Each consumer's own records of the rules this kit replaces stay in that
+was reviewed in three rounds by independent critics before the decisions of
+2026-11-21. The policy-shape decisions of 2026-11-22 (path policy, trusted
+signals, extension mechanism) followed outside research and two critic reviews
+of its synthesis; the research is summarised in
+[the research note](research/2026-11-policy-shape.md). Each consumer's own records of the rules this kit replaces stay in that
 consumer; a private companion record outside this repository maps them.
 
 ## Owner decisions
@@ -93,6 +96,211 @@ the design but not reviewed again at design level. Remaining details are
 handled against concrete diffs: in this repository for kit-level items, in
 each consumer's migration for per-repository items.
 
+### 2026-11-22: path policy on runner lanes is an allowlist with default hold
+
+A runner lane's path policy is written as what that lane's work looks like
+(`tier.default: "hold"` and `tier.auto`), not as a list of sensitive paths.
+`hold_paths` stay for defensive entries inside allowed directories. The floor
+stays in the kit for the classes that are the same in every consumer, and its
+rationale is restated by class (design section 5.4): **authority** (what the
+next run obeys), **execution** (what runs on the owner's machine or with
+credentials) and **oracle** (what decides whether a check passes). Product
+code is deliberately not listed, because a revert undoes it.
+
+Why:
+
+- A denylist fails by omission: a new location or a new kind of configuration
+  passes until someone amends the list, and the lists have grown by amendment
+  after incidents. A default-hold fails by over-holding, which costs the owner
+  a look.
+- A merged runner change waits for the morning replay, and the three classes
+  above do harm before a replay or a revert can act: the night's later runs
+  obey a merged rule change, the owner's next pull runs a merged hook, and a
+  weakened oracle lets the rest of the night's merges pass on false evidence.
+- An allowlist is stricter than a denylist, so it fits the overlay step
+  (design section 10), which may only be stricter than today.
+- Evidence from the backtests (private; aggregate only): a trial allowlist of
+  four entries gave the same verdict on all ten runner self-merges of one
+  consumer (computed from the backtest facts, not re-run through the kit), and
+  the other consumer's backtest already ran as an allowlist.
+- Outside practice keeps a short list only as a backstop and allowlists safe
+  change categories for automated landing (research note). The evidence is of
+  medium strength: no source describes a solo operator with one identity.
+
+Replaces: the denylist form that design section 6 described for the game
+consumer (a choice that decision 2026-11-21, "per-repository trade-offs are
+decided at migration", left to that consumer), and open question 3's
+recommendation to keep the current list at the switch and trial the allowlist
+in a separate pull request. The entries of each allowlist are still chosen at
+that consumer's migration, from its backtest.
+
+### 2026-11-22: two homes, split by scope; three readers of one policy
+
+Policy has two homes: the kit floor (the same in every consumer, and a
+manifest cannot loosen it) and one manifest per consumer. All three
+enforcement points read that same policy: the write and push hook on the
+runner lane, a path check that needs no pull request (a base and a head only,
+reporting each path's class), and the merge gate. A prose copy of the policy
+in a consumer's runner specification becomes a pointer only at that
+consumer's switch step, and only after the path check exists.
+
+Why: a consumer that states its sensitive paths in a runner specification, in
+its gate configuration and in the kit's floor keeps three copies, and the list
+changed once inside a one-month backtest window, which would have left the
+copies disagreeing. The prose also serves moments the pull-request-bound gate
+cannot: a tip check before any pull request exists, and the paths a runner
+lists in a pull request description. Until a pull-request-free check exists,
+the prose has to stay.
+
+Replaces: the hook's separate runner-lane write list (open question 2 had it
+as a list of its own) and the plan to leave each consumer's prose list in
+place indefinitely.
+
+### 2026-11-22: declarative content rules first; `extra_check` demoted
+
+The manifest gets four generic content-rule types, evaluated in the pure
+core: hold on add, delete or rename under a glob; hold on changed lines that
+match a pattern under a glob; a structured file may change only named keys;
+front matter may change only named keys and must stay well-formed (design
+section 5.4.1). A consumer-supplied `extra_check` script becomes a recorded
+contract (design section 11.1), built only for the first rule the four types
+cannot express.
+
+This reverses the earlier plan, which gave every content rule to an
+`extra_check` script read from the default branch (open question 18, design
+sections 6 and 11).
+
+Why:
+
+- Replay by construction: the types read git objects in the pure core, so the
+  morning replay evaluates exactly what the live call did. A script has to
+  be run, bounded and recorded.
+- One home: the rules sit in the manifest beside the paths, so the hook, the
+  path check and the gate read one file.
+- No consumer-supplied code runs on the owner's host, outside every sandbox,
+  with the owner's privileges.
+- Mature systems converged on small shared rule languages and keep repository
+  variety in data (research note): one code-review system retired
+  per-project logic for a single expression language, and a merge bot keeps its
+  merge policy central while jobs live in the repository.
+- Each type has a current user in the backtests: the game consumer's two
+  rules about its specifications directory (types 1 and 2) and the multi-repo
+  consumer's version-only file and front-matter rules (types 3 and 4). In
+  that consumer's forced-lane comparison with its existing script, the one
+  case where the script refused and the kit alone would have merged was a new
+  file whose front matter the script rejects; type 4 covers it.
+
+Not covered by the four types: a rule restricting changes to named sections of
+one Markdown file (the first candidate for `extra_check` or for a fifth
+type, decided at that consumer's migration) and "an automatic fix never
+relaxes a permission rule", which has no mechanical form and stays with
+review. A content rule can only add a hold.
+
+### 2026-11-22: the merge-time path policy protects two things only
+
+The path policy protects what a check result on the head means and what lands
+on the base branch. It does not protect against code that runs before the
+merge. A same-repository `pull_request` run executes the branch's own workflow
+file, receives the repository's secrets and may raise its token permissions in
+that file (documented; research note), so holding `.github/**` at merge time
+cannot protect secrets. The structural answers are:
+
+- deploy secrets live in an environment limited to the production branch. This
+  is a consumer setting, free on public repositories (on the free plan,
+  environments can be configured only for public repositories), and outside
+  the kit's main line, which changes no GitHub setting (decision 2026-11-21);
+- the hook denies writes and pushes to the workflow directory on the runner
+  lane (design section 8.1);
+- whether the runner's own credential can already not write workflow files
+  is a probe (open question 26); the floor stays either way.
+
+Replaces: the implicit reading that the floor's hold on workflow files made CI
+configuration safe. It makes the check result meaningful at merge time; it
+never stopped the run.
+
+### 2026-11-22: trusted signals are unchanged
+
+The gate trusts check runs created by the GitHub Actions app, matched by name;
+the pinned AI-reviewer bot, bound to the head SHA; and never commit statuses.
+A consumer's derived display status may stay as a display-only status that the
+gate never reads (it keeps the decision of 2026-11-21 about one private
+consumer's status workflow). Detection of an edit to the reviewer's summary
+comment is recorded as pending a read-only probe (open question 29): it needs
+a GraphQL field that the cloud proxy may reject, and the reviewer edits its own
+summary, so a rule of "never edited" is wrong.
+
+Why: statuses are writable by anyone with write access and check runs only by
+GitHub Apps, and every mature merger the research found merges with the
+evaluated head SHA (research note). The check-run signal is weaker than it
+looks only in one direction: trust in a check depends on the oracle files
+being held, and the held files do not depend on check trust.
+
+Not decided: pinning a public consumer's ruleset to the source app of its
+required contexts (open question 25).
+
+### 2026-11-22: process-state rules belong to the gate core or the procedure
+
+A rule about process state, such as "do nothing while an owner pull request
+is open", belongs to the gate core or to the runner procedure. It is never a
+content rule and never a script.
+
+Why: such a rule needs GitHub state (other pull requests), which a content
+rule cannot see and a no-token script cannot read. No mature system the
+research found implements such a rule as a per-pull-request script; they put
+them in the queue, the scheduler or a human-set flag. In a backtest of the
+multi-repo consumer, one pull request got `merge` where its own procedure's
+"owner pull request is open" step would have stopped the run; the gap matters
+only if the gate replaces that step. Which of the two homes is chosen at the
+first migration that needs it (open question 23).
+
+### 2026-11-22: the lane marker names the pull request's lane
+
+The `Auto-Merged-By:` marker of a lane must name the lane of the pull request,
+not the routine that ran the merge. A consumer whose script writes the running
+routine's name changes its marker before it migrates.
+
+Why: replay finds the lane of a non-queue pull request from the marker. A
+backtest of the multi-repo consumer inferred that two of its six pull requests
+of one kind were merged by the other kind's routine; under a routine-named
+marker, replay would assign the other lane and hold them. Updates open
+question 13 instead of adding a new one.
+
+### 2026-11-22: no boundary while the agent acts as the owner's administrator
+
+A real boundary is out of reach as long as the agent acts through the owner's
+administrator identity: no GitHub setting stops that identity, and a ruleset
+on a public repository can be switched off with one call. A separate agent
+identity is deferred; revisit it if the cloud runner can act as a separate
+identity (open question 31).
+
+Why: every published separation of agent and approver the research found
+depends on a distinct agent identity plus a second approver, and no published
+account of a solo operator whose unattended agent merges its own pull
+requests was found (research note). The design stays a guardrail with
+detection.
+
+### 2026-11-22: interactive lanes are not built now
+
+The gate has no lane for interactive pull requests (design section 11).
+
+Why: the rules an interactive merge depends on (the owner's own message in the
+session, a named pull request, a critic's waiver or convergence) are inputs
+the gate cannot see; the waiver sits in an agent-writable pull request body,
+which the gate must never read. In the backtest of the game consumer, with an
+interactive lane forced onto 74 pull requests outside the queue lane, 1 got
+`merge` and the rest held or waited, mostly on paths the owner should see
+anyway; the lane would add almost nothing. The other backtest found the same for its
+interactive and review-loop pull requests: the rules that decide them cannot
+be expressed in a manifest.
+
+### 2026-11-22: left open by this change
+
+Not decided, and recorded as open questions: whether a consumer's
+oracle-defining source file (the file that holds the limits its checks
+enforce) should be a hold path (question 22); which branch a consumer's
+manifest is read from when its working branch is not the default branch
+(question 1); and the probes (questions 26 to 31).
+
 ## Settled during review (carried into the design)
 
 - **Lane of the multi-repo routine is passed by the caller.** The premise "the
@@ -113,6 +321,14 @@ each consumer's migration for per-repository items.
   Actions-side gate is an optional upgrade.
 - **Not revived:** a cross-repository lint and a generic critic loop, both
   rejected earlier by the owner.
+- **Rejected on 2026-11-22:** a risk score instead of a path policy (it needs
+  incident data and a model; a 150-line cap alone would have held nine of ten
+  runner self-merges of one consumer for no written reason); an owner-signed
+  policy tag (it gives policy integrity without a second identity but does
+  not remove the list); a runner that never merges its own pull requests,
+  with the owner approving in batches (it gives up what the kit is for); a
+  fork lane (not viable with one identity); and a consumer-supplied script as
+  the first extension mechanism (demoted, above).
 
 ## Rejected designs
 

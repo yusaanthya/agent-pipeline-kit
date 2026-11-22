@@ -4,7 +4,10 @@ For the implementer of the gate library, its input collector and the
 replay/backtest CLI. The behaviour is specified in [the design](design.md);
 where this plan and the design disagree, the design wins and the disagreement
 is a bug in this plan. The hook adapter, bootstrap, manifest templates and
-runner procedure are **not** part of Phase 1.
+runner procedure are **not** part of Phase 1. Sections 1 to 8 are Phase 1.
+Sections 9 to 11 are the slices after it (content rules in the core, the path
+check without a pull request, and the hook's reading of the same policy); each
+starts after the previous one is merged, and none of them is implemented yet.
 
 Constraints: Node.js 22, ESM, no runtime dependencies, tests with `node:test`
 and `node:assert/strict`. The core (`src/core/`) is pure: no I/O, no clock, no
@@ -478,8 +481,11 @@ each:
 ### 6.4 Checks of the multi-repo routine's bash gate script
 
 Each check of the script, what the kit does with it, and where it is tested.
-"Consumer" means it moves to that consumer's `extra_check`, a later slice;
-its existing tests move with it and are not part of Phase 1.
+"Content rule" means it becomes a `content_rules` entry of that consumer's
+manifest (slice 2, section 9). "Consumer" means it has no declarative form: it
+stays with that consumer, as the first candidate for the recorded `extra_check`
+contract or for a further rule type (open question 18); its existing tests move
+with it and are not part of Phase 1.
 
 | # | Script check | Kit | Test |
 | --- | --- | --- | --- |
@@ -502,12 +508,12 @@ its existing tests move with it and are not part of Phase 1.
 | G17 | non-ASCII path read unquoted | `-z` parsing | parse 2 |
 | G18 | binary file in numstat | NUL check, `hold:owner` (`binary`); binary numstat lines count as 0 | verdict 28; parse 3 |
 | G19 | symlink | `hold:owner` (`mode`) | verdict 27 |
-| G20 | a JSON manifest may change only its version field | consumer | none |
+| G20 | a JSON manifest may change only its version field | content rule `keys_only` | slice 2, K-rows |
 | G21 | non-Markdown file outside the allowlist | allowlist | verdict 30 |
-| G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | consumer | none |
-| G23 | CR line endings and byte-order marks in Markdown | consumer | none |
+| G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | content rule `front_matter_only` | slice 2, F-rows |
+| G23 | CR line endings and byte-order marks in Markdown | the front-matter part is covered by `front_matter_only`; the whole-file part is a follow-up (design section 11) | slice 2, F-rows (front matter only) |
 | G24 | 150-line budget | `max_changed_lines` | verdict 34, 35 |
-| G25 | triage edits only two sections of the backlog; no heading or preamble change | consumer | none |
+| G25 | triage edits only two sections of the backlog; no heading or preamble change | consumer (the first candidate for `extra_check` or a fifth rule type) | none |
 | G26 | backlog file turned into a symlink | status `T`, `hold:owner` (`mode`) | verdict 27 |
 | G27 | the merge message is printed only on PASS | `merge` params only on `merge` | verdict 57 |
 | G28 | run the base branch's copy, never the pull request's | manifest from the trust ref; kit pinned (bootstrap, later) | collector 2 |
@@ -570,7 +576,285 @@ must be mergeable (verdict 46, 47).
 
 ## 8. Out of Phase 1
 
-Hook adapter and bootstrap; `extra_check`; interactive lane; the on-disk
-manifest templates and `rules.md` templates; the runner procedure; desk
-changes; detection of commits that belong to no pull request. See the design's
+Hook adapter and bootstrap; `extra_check` (its contract is recorded, not
+built); interactive lane (not built); the on-disk manifest templates and
+`rules.md` templates; the runner procedure; desk changes; detection of commits
+that belong to no pull request. The content rules, the path check and the
+hook's policy reading are specified in sections 9 to 11. See the design's
 follow-ups.
+
+## 9. Slice 2: content rules in the core
+
+Behaviour: [design 5.4.1](design.md#541-content-rules-later-slice) and section
+6. Same constraints as Phase 1: the core is pure (no I/O, no clock, no
+randomness), no dependencies, tests with `node:test`, each test written before
+the code it tests. The schema stays version 1: `content_rules` is an optional
+key, and a manifest without it behaves as before.
+
+### 9.1 Module layout
+
+```text
+src/core/constants.js    adds CONTENT_MAX_BYTES = 1048576
+src/core/content.js      pure: splitLines, matchLine, changedLines, parseStrictJson, readFrontMatter,
+                         evaluateContentRules(manifest, files, contents), contentTargets(manifest, files)
+src/core/manifest.js     validates content_rules (below)
+src/core/verdict.js      step 5 (change set): calls evaluateContentRules; adds the reason codes below
+src/collect/collect.js   reads the blobs that contentTargets names and adds `contents` to the input
+test/core/content.test.js, test/core/manifest.test.js, test/core/verdict.test.js, test/collect/collect.test.js
+```
+
+### 9.2 Data shapes
+
+```js
+/**
+ * GateInput gains:
+ * @property {Record<string, {base: ContentSide, head: ContentSide}>} contents
+ *           keyed by the diff path; present exactly for the paths contentTargets(manifest, files) returns
+ *
+ * @typedef {{state: 'absent'} | {state: 'present', size: number, bytes: Uint8Array|null}} ContentSide
+ *           bytes is null when size > CONTENT_MAX_BYTES: the collector reads the size with
+ *           `git cat-file -s` and does not read the blob
+ */
+```
+
+`contentTargets(manifest, files)` returns the paths of entries (status other
+than `T`) that match a glob of `hold_on_line_change`, `keys_only` or
+`front_matter_only`. Type 1 needs no contents. The collector reads, for each
+target, the blob at the merge base (state `absent` when the status is `A`) and
+at the head (state `absent` when the status is `D`). The core, not the
+collector, decides readability: size over the cap (`bytes: null`), invalid
+UTF-8 or a NUL byte is unreadable. Decoding uses
+`new TextDecoder('utf-8', {fatal: true, ignoreBOM: true})`: with the default
+`ignoreBOM: false` the decoder would silently drop a leading byte-order mark,
+which the JSON and front-matter rules must see. A target
+path missing from `contents`, or a side missing for a status that needs it,
+gives `blocked:input` (`content-missing`).
+
+New reason codes, added to the table of section 2.1:
+
+| Verdict | Codes |
+| --- | --- |
+| `hold:owner` | `rule-add-delete`, `rule-line-change`, `rule-keys`, `rule-front-matter`; detail is `<path>: <word>`, the word one of `added`, `deleted`, `line-changed`, `key-changed`, `front-matter-invalid`, `front-matter-changed`, `unreadable` |
+| `blocked:input` | `content-missing` |
+
+No reason carries text from a file. Within `hold:owner`, content reasons come
+after `not-in-allowlist` (the order of design 5.4's list).
+
+### 9.3 Functions
+
+```js
+export function splitLines(text)            // -> string[]: split at \n, drop one trailing \r per line, no phantom final line
+export function matchLine(pattern, line)    // -> boolean; pattern valid: literal, optional leading ^, optional trailing $
+export function changedLines(pattern, baseText|null, headText|null) // -> boolean: a matching line text with differing counts
+export function parseStrictJson(text)       // -> {ok: true, value} | {ok: false}: object top level, no BOM, no duplicate key at any depth
+export function readFrontMatter(text|null)  // -> {ok: true, blocks: Map<string,string>} | {ok: false}; null or no `---` first line gives empty blocks
+export function evaluateContentRules(manifest, files, contents) // -> Reason[]
+export function contentTargets(manifest, files)                 // -> string[]
+```
+
+`parseStrictJson` is a small tokenizer around `JSON.parse`: it scans for object
+keys to detect duplicates and leaves value parsing to `JSON.parse`.
+
+### 9.4 Tests
+
+Manifest (`manifest.test.js`):
+
+| # | Case | Expected |
+| --- | --- | --- |
+| M1 | no `content_rules` | valid; the parsed manifest has none |
+| M2 | one valid entry of each type; all four; empty arrays | valid |
+| M3 | `content_rules` not an object; unknown key in it; a type whose value is not an array | invalid |
+| M4 | an entry that is not an object, lacks `glob`, `pattern` or `keys`, or has an unknown key | invalid |
+| M5 | `hold_on_add_delete` entry that is not a string; any glob invalid under section 5.4 | invalid |
+| M6 | pattern empty, `^`, `$`, `^$`, not a string | invalid |
+| M7 | `keys` empty, with a duplicate, with an empty string, with a non-string | invalid |
+| M8 | the `content_rules` fragment of the design merged into the example block | valid |
+
+Line helpers (`content.test.js`):
+
+| # | Case | Expected |
+| --- | --- | --- |
+| L1 | `splitLines`: `a\nb`, `a\nb\n`, empty string, `a\r\nb`, a lone `\r` in the middle, blank lines | as design 5.4.1 (empty gives no lines; one trailing `\r` dropped) |
+| L2 | `matchLine`: `Status:` anywhere; `^Status:` at the start only; `x$` at the end only; `^x$` whole line; case difference; `.` and `*` and `\` literal | as the syntax |
+| L3 | `changedLines`: a matching line added; removed; edited (one removed, one added); moved only; duplicated 1 to 2; 2 to 1; no matching line; identical files | true, true, true, false, true, true, false, false |
+| L4 | `changedLines`: base absent (all head lines added); head absent (all base lines removed) | per matching line present |
+
+Rules (`content.test.js`, through `evaluateContentRules`):
+
+| # | Rule | Case | Expected |
+| --- | --- | --- | --- |
+| A1 | `hold_on_add_delete` | status `A` under the glob; status `D`; status `M`; outside the glob; glob matched in a different case | `rule-add-delete` (added); (deleted); none; none; `rule-add-delete` |
+| A2 | `hold_on_add_delete` | a rename of a file inside the glob (D plus A) to a path inside it; to a path outside it; from outside to inside | two reasons; one (deleted); one (added) |
+| A3 | `hold_on_add_delete` | status `T` | none (the mode condition holds it) |
+| N1 | `hold_on_line_change` | the cases of L3 through a manifest; two rules over one file | `rule-line-change` where changed; reasons per rule |
+| N2 | `hold_on_line_change` | blob over the cap (`bytes: null`); invalid UTF-8; NUL byte | `rule-line-change` (unreadable) |
+| K1 | `keys_only` | only a named key changed; a named key added; a named key removed; reformatted only; key order changed | none |
+| K2 | `keys_only` | an unnamed key changed; added; removed; a nested value of an unnamed key changed; array order changed | `rule-keys` (key-changed) |
+| K3 | `keys_only` | numbers `1` and `1.0`; objects equal with different key order | equal: none |
+| K4 | `keys_only` | status `A`; status `D` | `rule-keys` (added; deleted) |
+| K5 | `keys_only` | base or head: not JSON; top level an array; a BOM; a duplicate key at depth 1 and depth 3; unreadable | `rule-keys` (unreadable) |
+| F1 | `front_matter_only` | only a named key's block changed; a named key added; removed | none |
+| F2 | `front_matter_only` | an unnamed key's value changed; its list-form continuation lines changed; a key added; a key removed | `rule-front-matter` (front-matter-changed) |
+| F3 | `front_matter_only` | body edited only, front matter identical; neither side has front matter | none |
+| F4 | `front_matter_only` | head opener `--- `, `---yaml`, `----`; CRLF opener; no closing `---`; a `\r` inside; a comment line at column 0; a quoted key; a repeated key; a stray line before the first key | `rule-front-matter` (front-matter-invalid) |
+| F5 | `front_matter_only` | a leading BOM or form feed in the head where the base has front matter with an unnamed key | `rule-front-matter` (front-matter-changed): the keys vanished |
+| F6 | `front_matter_only` | base ill-formed, head identical | `rule-front-matter` (front-matter-invalid) |
+| F7 | `front_matter_only` | added file with only named keys; added file with another key; deleted file with another key | none; `front-matter-changed`; `front-matter-changed` |
+| F8 | `front_matter_only` | unreadable blob | `rule-front-matter` (unreadable) |
+| X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T`; a type 1 glob only; no rules | the matching paths; excluded; empty; empty |
+| X2 | all | a target path missing from `contents`; a side missing for status `M` | `blocked:input` (`content-missing`) |
+| X3 | all | no reason contains any text of any file, for every row above | holds |
+
+Verdict (`verdict.test.js`, continuing the numbering of 6.1; the baseline gains
+no `content_rules`):
+
+| # | Change from baseline | Expected verdict | Code |
+| --- | --- | --- | --- |
+| 65 | `hold_on_add_delete: ["docs/**"]`; one added `docs/x.md`; the allowlist includes `docs/**` | `hold:owner` | `rule-add-delete` (the allowlist does not override it) |
+| 66 | a content-rule path that is also in `hold_paths` | `hold:owner` | both `hold-path` and the rule's code |
+| 67 | a content-rule path that is a floor path | `hold:owner` | `floor` and the rule's code |
+| 68 | the item's own report matched by a content rule it violates | `hold:owner` | the rule's code (the report exemption does not cover content rules) |
+| 69 | a file under `keys_only` with only the named key changed, in the allowlist | `merge` | |
+| 70 | as 69 but outside the allowlist | `hold:owner` | `not-in-allowlist` (a content rule never grants) |
+| 71 | `contents` missing for a target | `blocked:input` | `content-missing` |
+| 72 | replay: the same input with `asOf` set | the same verdict and reasons as live | |
+| 73 | two evaluations of one input deep-equal; the input is not mutated | | |
+
+Collector (`collect.test.js`):
+
+| # | Case | Expected |
+| --- | --- | --- |
+| C1 | `contentTargets` is empty | no blob command is run |
+| C2 | a target with status `M`, `A`, `D` | blobs read at the merge base and the head; `absent` for the missing side |
+| C3 | a blob larger than the cap | `git cat-file -s` only; `bytes: null` |
+| C4 | blobs come from the merge base and the head, never from the base tip or the working tree | the fake `run` sees only those object names |
+| C5 | replay | the same objects as live |
+
+### 9.5 Order of work
+
+1. `constants.js`, `manifest.js` and rows M1 to M8.
+2. `content.js` helpers with L1 to L4, then the four rule types with A, N, K,
+   F and X rows.
+3. `verdict.js` integration with rows 65 to 73.
+4. `collect.js` with rows C1 to C5.
+5. Add the `content_rules` fragment to the design's example block, so that the
+   existing example test covers it.
+
+## 10. Slice 3: the path check without a pull request
+
+Behaviour: [design 8.6](design.md#86-path-check-without-a-pull-request-later-slice).
+It reuses the core's change-set evaluation, so the gate and the check cannot
+disagree.
+
+### 10.1 Module layout
+
+```text
+src/core/constants.js    FLOOR becomes [{id, class, writeTimeDeny, patterns}], ids as in design 5.4
+src/core/changes.js      classifyChanges({manifest, laneName, itemId, files, contents}) -> {paths, reasons}
+src/core/verdict.js      step 5 (change set) calls classifyChanges; behaviour unchanged
+src/collect/collect-paths.js  collectPaths({repo, repoDir, base, head, lane, item, manifestFile}, deps) -> PathInput
+src/cli.js               adds check-paths
+test/core/changes.test.js, test/collect/collect-paths.test.js, test/cli.test.js
+```
+
+The first step is a refactor with no behaviour change: the existing verdict
+tests (6.1) must pass unmodified before `check-paths` is added.
+
+### 10.2 Contract
+
+```text
+agent-pipeline-gate check-paths --repo OWNER/NAME --repo-dir DIR --base BRANCH --head SHA [--lane NAME] [--item ID] [--manifest FILE]
+```
+
+- `--head` is a full 40-hex commit SHA that must exist in the clone;
+  `--base` is a branch name that passes the ref-name validation of section 4,
+  fetched fresh from `origin` into the private namespace. The diff is
+  `merge-base..head`, read with the commands of 4, step 6; blobs for
+  `contentTargets` as in 9. Nothing is checked out.
+- The manifest is read as in section 4, step 4. `--manifest FILE` is accepted;
+  the output records `manifest.source` (`trust-ref` or `file`) and the blob id
+  read.
+- `--item` requires `--lane` to name a queue lane; otherwise exit 2.
+- `classifyChanges` returns, per path, `classes` in the order of the design's
+  table and the reasons that `evaluate` would give for the change-set
+  conditions. With no lane, the lane-dependent conditions (allowlist, strong
+  review, line budget, own-report exemption) are skipped and no path gets
+  `not-in-allowlist`, `strong-review` or `own-report`.
+- Output: one JSON object with `repo`, `kit`, `base` (`ref`, `sha`),
+  `mergeBase`, `head`, `lane`, `manifest`, `result`, `reasons`, `paths`
+  (`path`, `status`, `classes`), as design 8.6. Exit 0 for `clear`, 1 for any
+  other result including `collect-failed`, 2 for a usage error.
+
+### 10.3 Tests
+
+`changes.test.js` (table-driven, one row per `classes` outcome):
+
+| # | Case | Expected |
+| --- | --- | --- |
+| P1 | a modified file inside the allowlist, lane given | `allowed`; `result: clear` |
+| P2 | one path per floor category id, including the cases of 6.1 row 24 | `floor:<id>`; `hold:owner` |
+| P3 | `hold_paths` entry | `hold-path` |
+| P4 | a path outside the allowlist; the same path with no lane | `not-in-allowlist`; `allowed` |
+| P5 | `tier.strong_review` path | `strong-review`; `hold:strong-review` |
+| P6 | one path per content rule type violated | `content:add-delete`, `content:line-change`, `content:keys`, `content:front-matter` |
+| P7 | mode `100755`; a NUL byte | `mode`; `binary` |
+| P8 | a path that is a floor path, a hold path and a content-rule violation | all three classes, in the table's order |
+| P9 | the own report with `--item`; without `--item`; another item's report | `own-report`; `floor:ci-pipeline`; `floor:ci-pipeline` |
+| P10 | the own report violating a content rule | the content class (exemption limited to floor, allowlist, strong review) |
+| P11 | `max_changed_lines` exceeded, lane given | `result: hold:owner`, reason `too-large` |
+| P12 | agreement: for every verdict row of 6.1 and 9.4 whose expected verdict has change-set reasons, `classifyChanges` returns the same reasons that `evaluate` returns | equal |
+| P13 | no reason carries file text | holds |
+
+`collect-paths.test.js` (fake `run`): the manifest is read from the trust ref
+unless `manifestFile` is given, and the output says which; `--head` that is not
+in the clone throws `collect-failed`; `..`, a leading `-` or a space in `--base`
+throws before any git call; every call is an argument array; the namespace refs
+are deleted.
+
+`cli.test.js`: exit 0 for `clear`, 1 for a hold and for `collect-failed`, 2 for
+a usage error (missing `--head`, a head that is not 40 hex, `--item` without a
+queue lane); output is one JSON object; `blocked:manifest` for a missing
+manifest; `blocked:empty-diff` when head equals the merge base.
+
+### 10.4 Order of work
+
+1. `FLOOR` as categories; update the glob and floor tests; the verdict tests
+   pass unmodified.
+2. `changes.js` extracted from `verdict.js`; P12 as the safety net.
+3. `collect-paths.js`, then the CLI command.
+
+## 11. Slice 4: the hook reads the same policy
+
+Starts after the Phase 0 checks of design 8.5 have been run, because their
+results decide whether the hook or the procedure call carries the enforcement
+(the probe kit is in `probes/phase0/`). The policy part is specified here so
+that the hook cannot grow a list of its own.
+
+```text
+src/core/writeguard.js   writeDecision({manifest, laneName, itemId, path, op}) -> {decision: 'deny', reason} | {decision: 'none'}
+test/core/writeguard.test.js
+```
+
+`writeDecision` denies when `laneName` is a runner lane (the hook passes it
+from `PIPELINE_LANE`) and `path` matches a floor category whose
+`writeTimeDeny` is set (design 5.4), except `.agent-line/reports/<itemId>.md`
+for `op: 'write'` and `op: 'create'`. Any other path, any other lane, and an
+interactive session (no lane) give `none`. It reads no list of its own.
+
+| # | Case | Expected |
+| --- | --- | --- |
+| W1 | `.github/workflows/ci.yml`, `.github/x`, `.GitHub/x` | deny |
+| W2 | `.agent-line/queue/a.md`, `.agent-line/manifest.json`, `.agent-line/reports/other.md` | deny |
+| W3 | `.agent-line/reports/<itemId>.md` write and create; delete | none; deny |
+| W4 | `.claude/settings.json`, `a/.claude/hooks/x` | deny |
+| W5 | `package.json`, `CLAUDE.md`, `.husky/pre-commit` (floor, not write-time) | none |
+| W6 | a `hold_paths` entry; a path outside the allowlist | none |
+| W7 | no lane, an unknown lane | none |
+| W8 | the set of write-time patterns equals the write-time column of the design's table (a test reads the table) | equal |
+
+The hook adapter itself (settings entry, matcher, exit codes, `onFailure`) is
+specified in design 8.1 and is tested when it is built. That slice also closes
+review findings R2 and R3 of the open questions: the collector fetches by
+explicit URL with hooks disabled, and `evaluate` stops accepting `--manifest`
+(it stays on `replay` and `backtest`; `check-paths` accepts it and records the
+source in its output). The hook never passes it.
