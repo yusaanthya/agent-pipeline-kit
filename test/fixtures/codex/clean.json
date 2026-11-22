@@ -1,0 +1,22 @@
+{
+  "_note": "Synthetic. Shaped after the REST output observed on quorum-election-simulator pull requests: one summary comment, one receipt comment, no findings.",
+  "headSha": "1111111111111111111111111111111111111111",
+  "comments": [
+    {
+      "id": 1001,
+      "user": { "id": 199175422, "login": "chatgpt-codex-connector[bot]" },
+      "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"1111111111111111111111111111111111111111\",\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"},\"security_review\":{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}} -->",
+      "created_at": "2026-11-10T10:00:00Z",
+      "updated_at": "2026-11-10T10:05:00Z"
+    },
+    {
+      "id": 1002,
+      "user": { "id": 199175422, "login": "chatgpt-codex-connector[bot]" },
+      "body": "<!-- codex-review-receipt:v1 -->\n\nCodex Review: Didn't find any major issues. Another round soon, please!\n\n**Reviewed commit:** `1111111111`",
+      "created_at": "2026-11-10T10:05:00Z",
+      "updated_at": "2026-11-10T10:05:00Z"
+    }
+  ],
+  "reviewComments": [],
+  "reviews": []
+}
