@@ -116,9 +116,9 @@ flowchart TD
 
 ### Shared policy and cutover
 
-The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. Three readers share the kit floor and the consumer manifest: the current PR evaluator, the planned path check without a PR, and the planned runner hook. For write and push checks, the hook enforces only the floor patterns marked for that purpose.
+The target policy combines an immutable kit floor with a consumer allowlist that defaults to a hold. Three readers share the kit floor and the consumer manifest: the PR evaluator, the `check-paths` command, and the planned runner hook. For write and push checks, the hook enforces only the floor patterns marked for that purpose.
 
-Start by backtesting and running the gate in shadow mode. During overlay, require both the existing rules and the gate to allow an unattended merge. Switch only after every existing hold has equivalent coverage or an explicit, recorded retirement, the path check without a PR exists, and the branch used to read policy is settled. Then replace duplicated rules with a pointer to the shared policy. [Historical path-check plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#10-slice-3-the-path-check-without-a-pull-request) · [Historical hook plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#11-slice-4-the-hook-reads-the-same-policy) · [Historical open questions](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/open-questions.md)
+Start by backtesting and running the gate in shadow mode. During overlay, require both the existing rules and the gate to allow an unattended merge. Switch only after every existing hold has equivalent coverage or an explicit, recorded retirement, the path check without a PR exists, and the branch used to read policy is settled. Then replace duplicated rules with a pointer to the shared policy. [Historical hook plan](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/implementation-plan.md#11-slice-4-the-hook-reads-the-same-policy) · [Historical open questions](https://github.com/yusaanthya/agent-pipeline-kit/blob/7d311aba10120e0ebd1026700e8e07e62b81f878/docs/open-questions.md)
 
 ## Run the gate
 
@@ -130,14 +130,16 @@ Run from the kit checkout and replace the repository, PR number, clone path, and
 node src/cli.js evaluate --repo OWNER/REPO --pr 123 --repo-dir /path/to/repo
 node src/cli.js replay --repo OWNER/REPO --pr 122 --repo-dir /path/to/repo
 node src/cli.js backtest --repo OWNER/REPO --repo-dir /path/to/repo --since 2026-11-01 --until 2026-11-08 --base preview
+node src/cli.js check-paths --repo OWNER/REPO --repo-dir /path/to/repo --base main --head 0123456789abcdef0123456789abcdef01234567 --lane nightly
 npm test
 ```
 
 - `evaluate` checks a live PR. Pass `--lane` for a caller lane. A configured queue lane is inferred from a `claude/item-<id>` head branch.
 - `replay` reconstructs a verdict for one merged PR. A caller lane is inferred from an exact `Auto-Merged-By:` line in the merge commit message that identifies one configured caller lane. Before cutover, configure every merging routine to stamp the lane of the PR it merges, including when another routine handles that lane.
 - `backtest` runs replay for PRs merged from `--since` inclusive to `--until` exclusive. The optional `--base` filters by target branch. It emits one JSON line per PR and a final summary. `anomalies` lists marked merges with a verdict other than `merge`, and `unmarkedNotMerge` lists such verdicts on unmarked merges. PRs whose evidence collection failed appear in both lists because their marker is unknown.
+- `check-paths` reports whether the change-set conditions of `evaluate` would hold a head commit that has no pull request, such as an unpushed commit in the clone, against a base branch fetched from `origin`. It checks nothing else, so the result is `clear` or a `hold:*` or `blocked:*` result, never `merge`. Without `--lane` the lane conditions are skipped. `--item ID` with a queue lane exempts that item's own report.
 
-`evaluate` and `replay` emit a JSON object and exit `0` for `merge` or `1` for any other verdict. `backtest` exits `0` after producing a summary even if it found anomalies, so inspect the JSON. It exits `1` if collecting the PR list fails. Invalid arguments exit `2`.
+`evaluate` and `replay` emit a JSON object and exit `0` for `merge` or `1` for any other verdict. `check-paths` exits `0` for `clear` and `1` otherwise. `backtest` exits `0` after producing a summary even if it found anomalies, so inspect the JSON. It exits `1` if collecting the PR list fails. Invalid arguments exit `2`.
 
 ## Configure policy
 
@@ -147,7 +149,7 @@ The CLI validates the `kit` field’s format. Pin the kit checkout separately fo
 
 A queue lane reads `.agent-line/queue/<id>.md` from the evaluated base commit. A missing item, unreadable front matter, or `merge: owner` in the item holds the PR for the owner. For a workflow without queue branches, configure a lane with `"kind": "caller"` and pass its name with `--lane` when running `evaluate`.
 
-All three commands accept `--manifest FILE`, which takes precedence over the policy in Git. Treat the file as trusted policy and keep it under operator control, outside the PR checkout. In `replay`, pass a separately verified copy of the policy in effect at merge time when available. In `backtest`, the same supplied file applies to every PR, so use it to evaluate a proposed policy or a window with one verified policy version. By default, replay selects a manifest from the current default branch’s first-parent history using commit timestamps as an approximation.
+All four commands accept `--manifest FILE`, which takes precedence over the policy in Git. Treat the file as trusted policy and keep it under operator control, outside the PR checkout. In `replay`, pass a separately verified copy of the policy in effect at merge time when available. In `backtest`, the same supplied file applies to every PR, so use it to evaluate a proposed policy or a window with one verified policy version. By default, replay selects a manifest from the current default branch’s first-parent history using commit timestamps as an approximation.
 
 ## Interpret results and adopt the gate
 

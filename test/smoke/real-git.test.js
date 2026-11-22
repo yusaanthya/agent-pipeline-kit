@@ -129,3 +129,46 @@ test('real git: CI workflow renamed out of .github / the old path is deleted / h
   assert.equal(code, 1);
   assert.ok(result.reasons.some((r) => r.code === 'floor' && r.detail === '.github/workflows/ci.yml'), JSON.stringify(result.reasons));
 });
+
+// A commit that exists only in the clone, on a local branch that is never pushed.
+async function checkUnpushedCommit(change, base) {
+  sh('checkout', '-q', 'main');
+  sh('checkout', '-q', '-B', 'local/x');
+  change();
+  sh('add', '-A');
+  sh('commit', '-q', '-m', 'unpushed');
+  const head = sh('rev-parse', 'HEAD');
+  const run = async (cmd, args, options) => {
+    if (cmd === 'git') return realRun(cmd, args, options);
+    assert.equal(args[args.length - 1], '/repos/owner/repo');
+    return { stdout: Buffer.from(JSON.stringify({ default_branch: 'trunk' })), stderr: Buffer.alloc(0), code: 0 };
+  };
+  const out = [];
+  const argv = ['check-paths', '--repo', 'owner/repo', '--repo-dir', work, '--base', base, '--head', head, '--lane', 'nightly'];
+  const code = await main(argv, { run, out: (line) => out.push(line), err: () => {} });
+  const result = JSON.parse(out[0]);
+  return { code, result, codes: result.reasons.map((r) => r.code), head };
+}
+
+test('real git: unpushed commit checked against a base ahead of its merge base / an allowed path, then a path the default branch holds / clear, then hold:owner from trunk', async () => {
+  // `stable` is one commit ahead of `main`, where the head forks, and is neither `main` nor the default branch.
+  sh('checkout', '-q', 'main');
+  sh('checkout', '-q', '-B', 'stable');
+  put('docs/stable.md', 's\n');
+  sh('add', '-A');
+  sh('commit', '-q', '-m', 'stable');
+  sh('push', '-q', '-f', 'origin', 'stable');
+  const stableTip = sh('rev-parse', 'stable');
+  const forkPoint = sh('rev-parse', 'main');
+  const allowed = await checkUnpushedCommit(() => put('docs/a.md', 'c\n'), 'stable');
+  assert.equal(allowed.result.result, 'clear');
+  assert.equal(allowed.code, 0);
+  assert.equal(allowed.result.head, allowed.head);
+  assert.deepEqual(allowed.result.base, { ref: 'stable', sha: stableTip });
+  assert.equal(allowed.result.mergeBase, forkPoint);
+  const held = await checkUnpushedCommit(() => put('src/a.js', 'export const a = 3;\n'), 'stable');
+  assert.equal(held.result.result, 'hold:owner');
+  assert.equal(held.code, 1);
+  assert.deepEqual(held.codes, ['hold-path']);
+  assert.equal(sh('for-each-ref', 'refs/agent-pipeline-kit'), '');
+});

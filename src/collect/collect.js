@@ -29,12 +29,17 @@ export async function collect(options, deps) {
   need(callerLane === null || (typeof callerLane === 'string' && LANE_NAME.test(callerLane)), 'invalid lane name');
 
   const gh = makeGithub(deps.run);
+  return withRefs(deps, repoDir, (git, refs, state) => gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile: deps.readFile, refs, state }));
+}
+
+// Runs `fn` with the private ref names and deletes the refs it fetched afterwards.
+async function withRefs(deps, repoDir, fn) {
   const git = makeGit(deps.run, repoDir);
   const ns = `refs/agent-pipeline-kit/${deps.pid ?? process.pid}`;
   const refs = { trust: `${ns}/trust`, base: `${ns}/base`, head: `${ns}/head` };
   const state = { fetching: false };
   try {
-    return await gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile: deps.readFile, refs, state });
+    return await fn(git, refs, state);
   } finally {
     if (state.fetching) for (const ref of Object.values(refs)) await git.deleteRef(ref);
   }
@@ -60,6 +65,53 @@ async function readContent(git, sha) {
   const bytes = await git.blob(sha);
   need(bytes.length === size, 'a blob differs from its size');
   return { state: 'present', size, bytes };
+}
+
+// The files changed between the merge base and the head, and the contents for
+// the content rules.
+async function readChanges(git, mergeBase, headSha, manifestText) {
+  const raw = await git.diffRaw(mergeBase, headSha);
+  const numstat = new Map((await git.diffNumstat(mergeBase, headSha)).map((entry) => [entry.key, entry]));
+  const files = [];
+  for (const entry of raw) {
+    const counts = numstat.get(entry.key);
+    need(counts !== undefined, `numstat has no entry for ${entry.path}`);
+    let headHasNul = null;
+    if (entry.headMode === '100644') {
+      need(SHA.test(entry.dstSha), 'git returned an invalid blob SHA');
+      headHasNul = (await git.blob(entry.dstSha)).includes(0);
+    }
+    files.push({
+      path: entry.path,
+      pathBytesOk: entry.pathBytesOk,
+      status: entry.status,
+      baseMode: entry.baseMode,
+      headMode: entry.headMode,
+      headHasNul,
+      added: counts.added,
+      deleted: counts.deleted,
+    });
+  }
+
+  // Contents for the content rules: the merge-base and head blobs of the
+  // paths that contentTargets names, by the object ids of the diff itself. A
+  // path is defined as an own property, so that a file named `__proto__` is
+  // an ordinary key.
+  const contents = {};
+  const parsedManifest = parseManifest(manifestText);
+  if (parsedManifest.ok) {
+    const targets = new Set(contentTargets(parsedManifest.manifest, files));
+    for (let i = 0; i < files.length; i += 1) {
+      if (!targets.has(files[i].path)) continue;
+      const { status } = files[i];
+      const value = {
+        base: status === 'A' ? { state: 'absent' } : await readContent(git, raw[i].srcSha),
+        head: status === 'D' ? { state: 'absent' } : await readContent(git, raw[i].dstSha),
+      };
+      Object.defineProperty(contents, files[i].path, { value, enumerable: true, writable: true, configurable: true });
+    }
+  }
+  return { files, contents };
 }
 
 async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile, refs, state }) {
@@ -120,48 +172,8 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
   const mergeBase = await git.mergeBase(baseSha, headSha);
   const baseIsAncestor = await git.isAncestor(baseSha, headSha);
 
-  // 6. Changed files.
-  const raw = await git.diffRaw(mergeBase, headSha);
-  const numstat = new Map((await git.diffNumstat(mergeBase, headSha)).map((entry) => [entry.key, entry]));
-  const files = [];
-  for (const entry of raw) {
-    const counts = numstat.get(entry.key);
-    need(counts !== undefined, `numstat has no entry for ${entry.path}`);
-    let headHasNul = null;
-    if (entry.headMode === '100644') {
-      need(SHA.test(entry.dstSha), 'git returned an invalid blob SHA');
-      headHasNul = (await git.blob(entry.dstSha)).includes(0);
-    }
-    files.push({
-      path: entry.path,
-      pathBytesOk: entry.pathBytesOk,
-      status: entry.status,
-      baseMode: entry.baseMode,
-      headMode: entry.headMode,
-      headHasNul,
-      added: counts.added,
-      deleted: counts.deleted,
-    });
-  }
-
-  // 6b. Contents for the content rules: the merge-base and head blobs of the
-  // paths that contentTargets names, by the object ids of the diff itself. A
-  // path is defined as an own property, so that a file named `__proto__` is
-  // an ordinary key.
-  const contents = {};
-  const parsedManifest = parseManifest(manifestText);
-  if (parsedManifest.ok) {
-    const targets = new Set(contentTargets(parsedManifest.manifest, files));
-    for (let i = 0; i < files.length; i += 1) {
-      if (!targets.has(files[i].path)) continue;
-      const { status } = files[i];
-      const value = {
-        base: status === 'A' ? { state: 'absent' } : await readContent(git, raw[i].srcSha),
-        head: status === 'D' ? { state: 'absent' } : await readContent(git, raw[i].dstSha),
-      };
-      Object.defineProperty(contents, files[i].path, { value, enumerable: true, writable: true, configurable: true });
-    }
-  }
+  // 6. Changed files and the contents for the content rules.
+  const { files, contents } = await readChanges(git, mergeBase, headSha, manifestText);
 
   // 7. Queue item at the base tip.
   const input = {};
@@ -244,4 +256,34 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
     mergeCommit,
     limits,
   };
+}
+
+/**
+ * The input of `evaluatePaths`: the diff between a base branch and a head commit
+ * that may exist only in the clone.
+ * @param {{repo: string, repoDir: string, base: string, head: string, lane?: string|null, item?: string|null, manifestFile?: string|null}} options
+ * @param {{run: Function, readFile: (path: string) => Promise<string>, pid?: number}} deps
+ * @returns {Promise<{manifestText: string|null, base: {ref: string, sha: string}, mergeBase: string, lane: string|null, item: string|null, files: object[], contents: object}>}
+ *          throws on any failed or unexpected API or git result
+ */
+export async function collectPaths(options, deps) {
+  const { repo, repoDir, base, head, lane = null, item = null, manifestFile = null } = options;
+  need(typeof repo === 'string' && REPO.test(repo) && !repo.split('/').some((part) => part === '.' || part === '..'), 'invalid repository name');
+  need(typeof repoDir === 'string' && repoDir !== '' && !repoDir.includes('\0'), 'invalid repository directory');
+  need(isRefName(base), 'invalid base branch name');
+  need(typeof head === 'string' && SHA.test(head), 'invalid head SHA');
+  need(lane === null || (typeof lane === 'string' && LANE_NAME.test(lane)), 'invalid lane name');
+  const gh = makeGithub(deps.run);
+  return withRefs(deps, repoDir, async (git, refs, state) => {
+    const defaultBranch = (await gh.get(`/repos/${repo}`))?.default_branch;
+    need(isRefName(defaultBranch), `invalid ref name for the default branch: ${JSON.stringify(defaultBranch)}`);
+    state.fetching = true;
+    await git.fetch([`+refs/heads/${defaultBranch}:${refs.trust}`, `+refs/heads/${base}:${refs.base}`]);
+    need(await git.resolve(head) === head, 'the head commit is not in the clone');
+    const baseSha = await git.resolve(refs.base);
+    const manifestText = manifestFile !== null ? await deps.readFile(manifestFile) : await git.textAt(refs.trust, MANIFEST_PATH);
+    const mergeBase = await git.mergeBase(baseSha, head);
+    const { files, contents } = await readChanges(git, mergeBase, head, manifestText);
+    return { manifestText, base: { ref: base, sha: baseSha }, mergeBase, lane, item, files, contents };
+  });
 }

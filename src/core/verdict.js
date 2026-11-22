@@ -93,6 +93,12 @@ const rank = (verdict) => {
   return index;
 };
 
+// Reasons sorted by VERDICT_ORDER, stable within a class.
+const sortReasons = (reasons) => reasons
+  .map((reason, index) => ({ reason, index, rank: rank(reason.verdict) }))
+  .sort((a, b) => a.rank - b.rank || a.index - b.index)
+  .map((entry) => entry.reason);
+
 const timeOf = (value) => (value === null || value === undefined ? NaN : Date.parse(value));
 
 // Whether an issue or pull request was open at `tMs`; null means live, where
@@ -123,6 +129,64 @@ function latestRun(runs) {
 }
 
 /**
+ * An empty diff, and a path whose bytes are not valid UTF-8. Shared by `evaluate` and `evaluatePaths`.
+ * @param {FileChange[]} files
+ * @returns {Reason[]}
+ */
+function diffReasons(files) {
+  const reasons = [];
+  if (files.length === 0) reasons.push({ verdict: 'blocked:empty-diff', code: 'empty-diff' });
+  for (const f of files) {
+    if (!f.pathBytesOk) reasons.push({ verdict: 'blocked:input', code: 'path-encoding', detail: f.path });
+  }
+  return reasons;
+}
+
+/**
+ * The change-set conditions: floor, hold paths, mode, binary, content rules and,
+ * with a lane, strong-review routing, the allowlist, the line budget and the own
+ * report exemption. Shared by `evaluate` and `evaluatePaths`.
+ * @param {object} manifest
+ * @param {object|null} lane       the manifest's lane entry, or null
+ * @param {string|null} reportId   the queue item whose own report is exempt, or null
+ * @param {FileChange[]} files
+ * @param {object} [contents]
+ * @returns {Reason[]} in the order the conditions are found
+ */
+function changeSetReasons(manifest, lane, reportId, files, contents) {
+  const reasons = [];
+  const add = (verdict, code, detail) => reasons.push(detail === undefined ? { verdict, code } : { verdict, code, detail });
+  const isQueue = lane !== null && lane.kind === 'queue';
+  let changed = 0;
+  for (const f of files) {
+    const lower = f.path.toLowerCase();
+    if (f.headMode !== null && f.headMode !== '100644') add('hold:owner', 'mode', f.path);
+    else if (f.status === 'T') add('hold:owner', 'mode', f.path);
+    if (f.headMode === '100644' && f.headHasNul !== false) add('hold:owner', 'binary', f.path);
+    // The item's own report is not a floor path and is exempt from the lane's
+    // tier checks. Compared exactly, not case-insensitively.
+    const ownReport = isQueue && f.path === `${REPORT_DIR}/${reportId}.md` &&
+      (f.status === 'A' || f.status === 'M') && f.headMode === '100644';
+    if (!ownReport && FLOOR.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'floor', lower);
+    if (manifest.hold_paths.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'hold-path', lower);
+    if (lane !== null && !ownReport) {
+      if (lane.tier.strong_review.some((pattern) => matches(pattern, f.path))) add('hold:strong-review', 'strong-review-path', lower);
+      if (lane.tier.default === 'hold' && !lane.tier.auto.some((pattern) => matches(pattern, f.path))) {
+        add('hold:owner', 'not-in-allowlist', lower);
+      }
+    }
+    // Content rules apply to every lane and to the own report,
+    // and come after the entry's other reasons. They only add reasons.
+    for (const reason of evaluateContentRules(manifest, [f], contents)) add(reason.verdict, reason.code, reason.detail);
+    changed += (f.added ?? 0) + (f.deleted ?? 0);
+  }
+  if (lane !== null && lane.max_changed_lines !== null && changed > lane.max_changed_lines) {
+    add('hold:owner', 'too-large', `${changed} > ${lane.max_changed_lines}`);
+  }
+  return reasons;
+}
+
+/**
  * @param {GateInput} input
  * @returns {Verdict}
  */
@@ -137,10 +201,7 @@ export function evaluate(input) {
   const add = (verdict, code, detail) => reasons.push(detail === undefined ? { verdict, code } : { verdict, code, detail });
 
   const finish = (lane, manifest, codexState) => {
-    const sorted = reasons
-      .map((reason, index) => ({ reason, index, rank: rank(reason.verdict) }))
-      .sort((a, b) => a.rank - b.rank || a.index - b.index)
-      .map((entry) => entry.reason);
+    const sorted = sortReasons(reasons);
     const verdict = sorted.length > 0 ? sorted[0].verdict : 'merge';
     return {
       verdict,
@@ -213,10 +274,7 @@ export function evaluate(input) {
     add('hold:owner', 'fork');
   }
   if (!replay && pr.state !== 'open') add('blocked:not-open', 'not-open');
-  if (input.files.length === 0) add('blocked:empty-diff', 'empty-diff');
-  for (const f of input.files) {
-    if (!f.pathBytesOk) add('blocked:input', 'path-encoding', f.path);
-  }
+  for (const reason of diffReasons(input.files)) add(reason.verdict, reason.code, reason.detail);
 
   // Lane and base.
   for (const [verdict, code, detail] of laneReasons) add(verdict, code, detail);
@@ -238,32 +296,7 @@ export function evaluate(input) {
   }
 
   // Change set.
-  let changed = 0;
-  for (const f of input.files) {
-    const lower = f.path.toLowerCase();
-    if (f.headMode !== null && f.headMode !== '100644') add('hold:owner', 'mode', f.path);
-    else if (f.status === 'T') add('hold:owner', 'mode', f.path);
-    if (f.headMode === '100644' && f.headHasNul !== false) add('hold:owner', 'binary', f.path);
-    // The item's own report is not a floor path and is exempt from the lane's
-    // tier checks. Compared exactly, not case-insensitively.
-    const ownReport = isQueue && f.path === `${REPORT_DIR}/${reportId}.md` &&
-      (f.status === 'A' || f.status === 'M') && f.headMode === '100644';
-    if (!ownReport && FLOOR.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'floor', lower);
-    if (manifest.hold_paths.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'hold-path', lower);
-    if (lane !== null && !ownReport) {
-      if (lane.tier.strong_review.some((pattern) => matches(pattern, f.path))) add('hold:strong-review', 'strong-review-path', lower);
-      if (lane.tier.default === 'hold' && !lane.tier.auto.some((pattern) => matches(pattern, f.path))) {
-        add('hold:owner', 'not-in-allowlist', lower);
-      }
-    }
-    // Content rules apply to every lane and to the own report,
-    // and come after the entry's other reasons. They only add reasons.
-    for (const reason of evaluateContentRules(manifest, [f], input.contents)) add(reason.verdict, reason.code, reason.detail);
-    changed += (f.added ?? 0) + (f.deleted ?? 0);
-  }
-  if (lane !== null && lane.max_changed_lines !== null && changed > lane.max_changed_lines) {
-    add('hold:owner', 'too-large', `${changed} > ${lane.max_changed_lines}`);
-  }
+  for (const reason of changeSetReasons(manifest, lane, reportId, input.files, input.contents)) add(reason.verdict, reason.code, reason.detail);
 
   // Checks.
   if (manifest.checks === 'none') {
@@ -313,4 +346,30 @@ export function evaluate(input) {
   }
 
   return finish(laneName, manifest, codexState);
+}
+
+/**
+ * The change-set conditions of `evaluate` for a change that has no pull request.
+ * Nothing else is evaluated, and the result is never `merge`.
+ * @param {{manifestText: string|null, lane: string|null, item: string|null, files: FileChange[], contents?: object}} input
+ * @returns {{result: string, lane: string|null, reasons: Reason[]} | {usage: string}}
+ *          `usage` when `item` is given and the lane is not a queue lane of the manifest
+ */
+export function evaluatePaths(input) {
+  const parsed = parseManifest(input.manifestText);
+  if (!parsed.ok) {
+    return { result: 'blocked:manifest', lane: null, reasons: [{ verdict: 'blocked:manifest', code: parsed.code, detail: parsed.errors[0] }] };
+  }
+  const { manifest } = parsed;
+  const reasons = [];
+  let lane = null;
+  if (input.lane !== null) {
+    if (Object.hasOwn(manifest.lanes, input.lane)) lane = manifest.lanes[input.lane];
+    else reasons.push({ verdict: 'blocked:lane', code: 'unknown-lane', detail: input.lane });
+  }
+  if (input.item !== null && lane !== null && lane.kind !== 'queue') return { usage: '--item needs a queue lane' };
+  reasons.push(...diffReasons(input.files));
+  reasons.push(...changeSetReasons(manifest, lane, input.item, input.files, input.contents));
+  const sorted = sortReasons(reasons);
+  return { result: sorted.length > 0 ? sorted[0].verdict : 'clear', lane: lane === null ? null : input.lane, reasons: sorted };
 }

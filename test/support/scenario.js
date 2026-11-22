@@ -33,3 +33,20 @@ export async function gate(over = {}, argv = evaluateArgv) {
   assert.equal(out.length, 1, 'one printed result');
   return { code, result: JSON.parse(out[0]), err, world };
 }
+
+const checkPathsArgv = ['check-paths', '--repo', REPO, '--repo-dir', '/work/clone', '--base', 'main', '--head', SHAS.HEAD];
+
+/**
+ * Runs `check-paths` against the fake world, where the head commit exists in the
+ * clone. Unlike `gate`, a usage error prints no result.
+ * @param {object} [over] makeWorld overrides
+ * @param {string[]} [extra] options added after --repo, --repo-dir, --base and --head
+ */
+export async function checkPaths(over = {}, extra = []) {
+  const world = makeWorld({ ...over, pid: process.pid, refs: { [SHAS.HEAD]: SHAS.HEAD, ...over.refs } });
+  const out = [];
+  const err = [];
+  const argv = [...checkPathsArgv, ...extra];
+  const code = await main(argv, { run: world.run, out: (line) => out.push(line), err: (line) => err.push(line) });
+  return { code, result: out.length === 1 ? JSON.parse(out[0]) : null, out, err, world };
+}
