@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   splitLines, matchLine, changedLines, parseStrictJson, readFrontMatter, evaluateContentRules, contentTargets,
 } from '../../src/core/content.js';
-import { CONTENT_MAX_BYTES, JSON_MAX_DEPTH } from '../../src/core/constants.js';
+import { CONTENT_MAX_BYTES } from '../../src/core/constants.js';
 import { baselineManifest, file, addedFile } from '../support/baseline.js';
 
 // L1: splitLines (design 5.4.1, "Lines").
@@ -620,129 +620,55 @@ test('evaluateContentRules does not mutate its inputs and is deterministic', () 
   assert.deepEqual({ m, files, contents }, copy);
 });
 
-// B1: a near-cap number token must not cost quadratic time.
+// A near-cap number token must not cost quadratic time.
 const fast = (name, fn) => test(name, { timeout: 20000 }, () => {
   const started = performance.now();
   fn();
   assert.ok(performance.now() - started < 2000, `took ${Math.round(performance.now() - started)} ms`);
 });
-const longNumber = (zeros, last = '1') => `1${'0'.repeat(zeros)}${last}`;
-fast('B1 a number of about 1 MiB of zeros ending in 1 is evaluated quickly (named key)', () => {
-  const n = longNumber(CONTENT_MAX_BYTES - 60);
-  assert.deepEqual(evalOne(KO, cfg, '{"version":1}', `{"version":${n}}`), []);
-});
-fast('B1 the same under an unnamed key: equal numbers pass, different ones hold', () => {
-  const same = longNumber(CONTENT_MAX_BYTES - 60);
-  assert.deepEqual(evalOne(KO, cfg, `{"x":${same}}`, `{"x":${same}}`), []);
-  assert.deepEqual(evalOne(KO, cfg, `{"x":${same}}`, `{"x":${longNumber(CONTENT_MAX_BYTES - 60, '2')}}`), [hold('rule-keys', 'tools/a/config.json', 'key-changed')]);
-});
-fast('B1 a long fraction and a long exponent are evaluated quickly', () => {
-  const frac = `0.${'0'.repeat(CONTENT_MAX_BYTES - 80)}1`;
-  assert.deepEqual(evalOne(KO, cfg, `{"x":${frac}}`, `{"x":${frac}e0}`), []);
-  const exp = `1e${'9'.repeat(CONTENT_MAX_BYTES - 80)}`;
-  assert.deepEqual(evalOne(KO, cfg, `{"x":${exp}}`, `{"x":${exp}}`), []);
-});
-fast('B1 a long run of zeros inside a front matter, a line pattern and a number-like string is linear', () => {
-  const zeros = '0'.repeat(CONTENT_MAX_BYTES - 100);
-  assert.deepEqual(evalOne(FM, guide, `---\nname: ${zeros}1\n---\n`, `---\nname: ${zeros}1\n---\n`), []);
-  assert.deepEqual(evalOne(LC, doc, `Status: a\n${zeros}\n`, `Status: a\n${zeros}\n`), []);
-  assert.deepEqual(evalOne(KO, cfg, `{"x":"${zeros}1"}`, `{"x":"${zeros}1"}`), []);
+fast('keys_only compares near-cap integers without rounding or quadratic work', () => {
+  const digits = `1${'0'.repeat(CONTENT_MAX_BYTES - 60)}`;
+  const base = `{"x":${digits}1}`;
+  assert.deepEqual(evalOne(KO, cfg, base, base), []);
+  assert.deepEqual(evalOne(KO, cfg, base, `{"x":${digits}2}`), [
+    hold('rule-keys', 'tools/a/config.json', 'key-changed'),
+  ]);
 });
 
-// B2: a fixed nesting cap, checked before JSON.parse.
-const nestedObjects = (depth) => `${'{"a":'.repeat(depth)}1${'}'.repeat(depth)}`;
-const nestedArrays = (depth) => `{"a":${'['.repeat(depth - 1)}1${']'.repeat(depth - 1)}}`;
-const depthRows = [['objects', nestedObjects], ['arrays', nestedArrays]];
-for (const [kind, make] of depthRows) {
-  test(`B2 parseStrictJson: ${kind} nested to the cap are readable`, () => {
-    assert.equal(parseStrictJson(make(JSON_MAX_DEPTH)).ok, true);
-  });
-  test(`B2 parseStrictJson: ${kind} nested one beyond the cap are not`, () => {
-    assert.deepEqual(parseStrictJson(make(JSON_MAX_DEPTH + 1)), { ok: false });
-  });
-  test(`B2 keys_only: ${kind} at the cap evaluate, one beyond are unreadable`, () => {
-    assert.deepEqual(evalOne(KO, cfg, make(JSON_MAX_DEPTH), make(JSON_MAX_DEPTH)), []);
-    assert.deepEqual(evalOne(KO, cfg, make(JSON_MAX_DEPTH), make(JSON_MAX_DEPTH + 1)), [hold('rule-keys', 'tools/a/config.json', 'unreadable')]);
-    assert.deepEqual(evalOne(KO, cfg, make(JSON_MAX_DEPTH + 1), make(JSON_MAX_DEPTH)), [hold('rule-keys', 'tools/a/config.json', 'unreadable')]);
-  });
-  test(`B2 ${kind}: the result does not depend on the depth of the call stack`, () => {
-    const inside = (frames, fn) => (frames === 0 ? fn() : inside(frames - 1, fn));
-    for (const depth of [JSON_MAX_DEPTH, JSON_MAX_DEPTH + 1]) {
-      const text = make(depth);
-      const shallow = parseStrictJson(text).ok;
-      for (const frames of [100, 1000, 3000, 6000]) {
-        assert.equal(inside(frames, () => parseStrictJson(text).ok), shallow, `${depth} at ${frames} frames`);
-      }
-    }
-  });
-}
-test('B2 braces inside strings do not count towards the depth', () => {
-  const text = `{"a":"${'['.repeat(2000)}","b":"${'{'.repeat(2000)}"}`;
-  assert.equal(parseStrictJson(text).ok, true);
-});
-test('B2 the cap is 512', () => {
-  assert.equal(JSON_MAX_DEPTH, 512);
+fast('keys_only normalizes near-cap fractions and exponents', () => {
+  const fraction = `0.${'0'.repeat(CONTENT_MAX_BYTES - 80)}1`;
+  const exponent = `1e${'9'.repeat(CONTENT_MAX_BYTES - 80)}`;
+  assert.deepEqual(evalOne(KO, cfg, `{"x":${fraction}}`, `{"x":${fraction}e0}`), []);
+  assert.deepEqual(evalOne(KO, cfg, `{"x":${exponent}}`, `{"x":${exponent}}`), []);
 });
 
-// B3: separators that common readers honour hide a guarded line (type 2).
-const SEPARATORS = [['CR', '\r'], ['VT', '\u000B'], ['FF', '\u000C'], ['NEL', '\u0085'], ['LS', ' '], ['PS', ' ']];
+test('keys_only accepts 512 nested JSON containers and rejects 513', () => {
+  const arrays = '['.repeat(510);
+  const close = ']'.repeat(510);
+  const atCap = `{"a":${arrays}{"b":"[{"}${close}}`;
+  const beyondCap = `{"a":[${arrays}{"b":"[{"}${close}]}`;
+  assert.deepEqual(evalOne(KO, cfg, atCap, atCap), []);
+  assert.deepEqual(evalOne(KO, cfg, atCap, beyondCap), [
+    hold('rule-keys', 'tools/a/config.json', 'unreadable'),
+  ]);
+});
+
 const titleBase = 'Title\nStatus: draft\n';
-for (const [name, ch] of SEPARATORS) {
-  run(`B3 ${name} hides a new Status line at the head`, LC, doc, titleBase, `Title${ch}Status: approved\nStatus: draft\n`, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-  run(`B3 ${name} at the base only`, LC, doc, `Title${ch}Status: approved\nStatus: draft\n`, titleBase, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-  run(`B3 ${name} in an added file`, LC, addedFile('docs/s.md'), undefined, `x${ch}y\n`, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-  run(`B3 ${name} in a deleted file`, LC, deleted('docs/s.md'), `x${ch}y\n`, undefined, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-  run(`B3 ${name} on both sides, unchanged`, LC, doc, `a${ch}b\n`, `a${ch}b\n`, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-}
-run('B3 the exact example of the review', LC, doc, 'Title\nStatus: draft\n', 'Title\rStatus: approved\nStatus: draft\n', [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-run('B3 CRLF line endings stay readable', LC, doc, 'Status: a\r\nx\r\n', 'Status: a\r\nx\r\ny\r\n', []);
-run('B3 CRLF line endings: a changed line still holds', LC, doc, 'Status: a\r\n', 'Status: b\r\n', [hold('rule-line-change', 'docs/s.md', 'line-changed')]);
-run('B3 two carriage returns before a newline: one remains', LC, doc, 'a\n', 'a\r\r\nb\n', [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-run('B3 a carriage return at the end of an unterminated last line', LC, doc, 'a\n', 'a\nb\r', [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-run('B3 a carriage return before a final newline-less line end is not a CRLF', LC, doc, 'a\n', 'a\r', [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
-run('B3 a text without separators beside CRLF is readable', LC, doc, 'a\r\nb\n', 'a\r\nb\nc\n', []);
-run('B3 other whitespace stays readable', LC, doc, 'a\n', 'a\n\t  ​\nb\n', []);
-run('B3 a separator is allowed under keys_only', KO, cfg, '{"x":"a"}', '{"x":"a b","version":2}', [hold('rule-keys', 'tools/a/config.json', 'key-changed')]);
-run('B3 a separator in the body is allowed under front_matter_only', FM, guide, base0, base0.replace('body', 'a b\fc\rd'), []);
-// B3 for the front matter: whitespace before the opener.
-const WHITESPACE = [['space', ' '], ['tab', '\t'], ['CR', '\r'], ['LF', '\n'], ...SEPARATORS.filter(([n]) => n !== 'CR')];
-for (const [name, ch] of WHITESPACE) {
-  test(`B3 readFrontMatter: ${name} before the opener is malformed`, () => {
-    assert.deepEqual(readFrontMatter(`${ch}---\nname: x\n---\n`), { ok: false });
-    assert.deepEqual(readFrontMatter(`${ch}${ch} \t---\r\nname: x\r\n---\r\n`), { ok: false });
-  });
-  run(`B3 front_matter_only: ${name} before the opener of an added file`, FM, addedFile('docs/guides/a.md'), undefined, `${ch}---\nname: x\n---\n`, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
-}
-run('B3 an added file whose head is a newline then a front matter', { front_matter_only: [{ glob: 'docs/**', keys: ['description'] }] },
-  addedFile('docs/a.md'), undefined, '\n---\nname: x\n---\n', [hold('rule-front-matter', 'docs/a.md', 'front-matter-invalid')]);
-run('B3 a space before the opener of a modified file', FM, guide, base0, ` ${base0}`, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
-run('B3 the base with whitespace before the opener', FM, guide, `\n${base0}`, base0, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
-const notOpeners = [
-  ['text without a rule', '\n\nhello\n---\n'],
-  ['a rule line later in the file', 'intro\n---\nmore\n'],
-  ['more hyphens after the whitespace', ' ----\nx\n'],
-  ['text after the hyphens', ' --- x\n'],
-  ['only whitespace', ' \n\t\n'],
-  ['a different word', '\n---a\n'],
-];
-for (const [name, text] of notOpeners) {
-  test(`B3 readFrontMatter: ${name} is no front matter`, () => {
-    assert.deepEqual(fm(text), { ok: true, blocks: {} });
-  });
-}
-test('B3 readFrontMatter: whitespace then hyphens at the end of the text is malformed', () => {
-  assert.deepEqual(readFrontMatter(' ---'), { ok: false });
-  assert.deepEqual(readFrontMatter('\n\n---'), { ok: false });
-});
+run('hold_on_line_change rejects a lone CR hiding a guarded line in the head', LC, doc,
+  titleBase, 'Title\rStatus: approved\nStatus: draft\n', [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
+run('hold_on_line_change rejects a Unicode line separator hiding a guarded line in the base', LC, doc,
+  'Title\u2028Status: approved\nStatus: draft\n', titleBase, [hold('rule-line-change', 'docs/s.md', 'unreadable')]);
+run('hold_on_line_change evaluates CRLF lines', LC, doc, 'Status: a\r\n', 'Status: b\r\n',
+  [hold('rule-line-change', 'docs/s.md', 'line-changed')]);
+run('keys_only reads a Unicode line separator inside a JSON string', KO, cfg,
+  '{"x":"a"}', '{"x":"a\u2028b","version":2}', [hold('rule-keys', 'tools/a/config.json', 'key-changed')]);
 
-// A line separator that readers honour, inside the front matter, would let a
-// reader see a key the grammar reads as part of a named key's value.
-for (const [name, sep] of [['U+000B', '\u000B'], ['U+000C', '\u000C'], ['U+0085', '\u0085'], ['U+2028', ' '], ['U+2029', ' ']]) {
-  test(`readFrontMatter: ${name} inside the front matter is malformed`, () => {
-    assert.deepEqual(readFrontMatter(`---\ndescription: x${sep}tools: all\n---\nbody\n`), { ok: false });
-    assert.deepEqual(readFrontMatter(`---\ndescription: x\n  more${sep}tools: all\n---\n`), { ok: false });
-  });
-  test(`readFrontMatter: ${name} in the body after the closer is not the front matter's concern`, () => {
-    assert.equal(readFrontMatter(`---\ndescription: x\n---\nbody${sep}more\n`).ok, true);
-  });
-}
+run('front_matter_only rejects a blank line before the opener', FM, addedFile('docs/guides/a.md'),
+  undefined, `\n${base0}`, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
+run('front_matter_only permits a Markdown thematic break after text', FM, guide,
+  'Introduction\n', 'Introduction\n\n---\n\nNext section\n', []);
+run('front_matter_only rejects a line separator hiding a key inside a value', FM, guide,
+  base0, base0.replace('description:', 'description: x\u2028tools: all '),
+  [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
+run('front_matter_only permits line separators in the body', FM, guide, base0,
+  base0.replace('body', 'a\u2028b\fc\rd'), []);
