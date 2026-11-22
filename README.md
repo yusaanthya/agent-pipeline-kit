@@ -152,8 +152,8 @@ secrets and needs none.
 | Piece | State |
 | --- | --- |
 | Design, threat model, decisions, open questions, review brief, implementation plan | Written (this directory's `docs/`) |
-| Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Specified in [the implementation plan](docs/implementation-plan.md); not implemented yet |
-| Input collector, replay and backtest CLI | Specified; not implemented yet |
+| Gate library (pure verdict function, Codex review parser, path rules, manifest validation) | Implemented in `src/core/`, specified in [the implementation plan](docs/implementation-plan.md); tests in `test/core/` |
+| Input collector, replay and backtest CLI | Implemented in `src/collect/` and `src/cli.js`; tests use fake `git` and `gh` runners |
 | PreToolUse hook adapter and bootstrap | Specified in [the design](docs/design.md) only; a later slice |
 | Manifest file format, `rules.md` and onboarding templates | Specified in the design; the on-disk format is an [open question](docs/open-questions.md); a later slice |
 | Generic runner procedure | Not specified here yet; a later slice |
@@ -175,9 +175,20 @@ docs/review-brief.md         brief for an external reviewer of Phase 1
 docs/implementation-plan.md  module layout, signatures, data shapes, CLI contract, tests
 ```
 
-Planned in Phase 1 (see the implementation plan): `package.json`, `src/core/`
-(pure), `src/collect/` (git and GitHub adapters), `src/cli.js`, `test/`.
-Node.js 22, ESM, no runtime dependencies, tests with `node:test`.
+```text
+package.json                 type module, no dependencies; `npm test` runs `node --test`
+src/core/                    pure: verdict function, Codex parser, path patterns, manifest
+src/collect/                 adapters: process runner, `gh api` reads, git reads, input collector
+src/cli.js                   evaluate | replay | backtest
+test/                        table-driven tests, fixtures, shared test builders (test/support)
+.github/workflows/ci.yml     `node --test` on pull requests and pushes to main
+```
+
+Node.js 22, ESM, no runtime or development dependencies, tests with
+`node:test`. Run the tests with `node --test`. The CLI needs `git` and an
+authenticated `gh`, and a local clone of the consumer to fetch into (it never
+checks anything out); see the usage lines in the
+[implementation plan](docs/implementation-plan.md#5-cli-contract).
 
 ## License
 

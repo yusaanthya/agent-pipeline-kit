@@ -1,0 +1,34 @@
+{
+  "_note": "Synthetic. Shaped after the REST output observed on quorum-election-simulator pull requests: an inline P2 badge finding and a receipt review body.",
+  "headSha": "2222222222222222222222222222222222222222",
+  "comments": [
+    {
+      "id": 2001,
+      "user": { "id": 199175422, "login": "chatgpt-codex-connector[bot]" },
+      "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"2222222222222222222222222222222222222222\",\"has_any_findings\":true,\"has_unresolved_findings\":true,\"status\":\"completed\"},\"security_review\":{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}} -->",
+      "created_at": "2026-11-11T10:00:00Z",
+      "updated_at": "2026-11-11T10:05:00Z"
+    }
+  ],
+  "reviewComments": [
+    {
+      "id": 2101,
+      "user": { "id": 199175422, "login": "chatgpt-codex-connector[bot]" },
+      "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Keep the helper pure**\n\nThe helper reads the clock, which makes it hard to test. This mentions P1 only as prose.",
+      "commit_id": "2222222222222222222222222222222222222222",
+      "original_commit_id": "2222222222222222222222222222222222222222",
+      "created_at": "2026-11-11T10:03:00Z",
+      "updated_at": "2026-11-11T10:03:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": 2201,
+      "user": { "id": 199175422, "login": "chatgpt-codex-connector[bot]" },
+      "state": "COMMENTED",
+      "body": "<!-- codex-review-receipt:v1 -->\n\n### Codex Review\n\nHere are some automated review suggestions for this pull request.\n\n**Reviewed commit:** `2222222222`",
+      "commit_id": "2222222222222222222222222222222222222222",
+      "submitted_at": "2026-11-11T10:03:00Z"
+    }
+  ]
+}
