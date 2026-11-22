@@ -102,8 +102,8 @@ with it and are not part of Phase 1.
 | G19 | symlink | `hold:owner` (`mode`) | verdict 27 |
 | G20 | a JSON manifest may change only its version field | content rule `keys_only` | slice 2, K-rows |
 | G21 | non-Markdown file outside the allowlist | allowlist | verdict 30 |
-| G22 | front matter identical except one key (list-form values, quoted keys, CRLF opener, trailing-space opener, BOM, form-feed opener, language-tag opener; a description-only change passes) | content rule `front_matter_only`; a leading BOM makes the file unreadable and holds | slice 2, F-rows |
-| G23 | CR line endings and byte-order marks in Markdown | a leading BOM is covered by readability for every matched file and the front-matter part by `front_matter_only`; carriage returns and other hidden line separators make a type 2 file unreadable (B-rows), and a whole-file rule beyond that is a follow-up (design section 11) | slice 2, F-rows and B-rows |
+| G22 | front matter may change only its description | content rule `front_matter_only` | slice 2 |
+| G23 | CR line endings and byte-order marks in Markdown | see [content-rule readability and front matter](design.md#541-content-rules) and the whole-file rule follow-up (design section 11) | slice 2 |
 | G24 | 150-line budget | `max_changed_lines` | verdict 34, 35 |
 | G25 | triage edits only two sections of the backlog; no heading or preamble change | consumer (the first candidate for `extra_check` or a fifth rule type) | none |
 | G26 | backlog file turned into a symlink | status `T`, `hold:owner` (`mode`) | verdict 27 |

@@ -167,13 +167,7 @@ Each of these is accepted and named; none is closed by the kit.
 12. **Content rules are structural** (TA): they see added or removed lines, top
     level keys and front matter blocks, not meaning. A pure move of a guarded
     line, a new value of a key the rule names, and any change to a file's body
-    are not changes they hold. A line separator that readers honour and the
-    line split does not (a carriage return outside a CRLF, U+000B, U+000C,
-    U+0085, U+2028, U+2029) makes a type 2 file unreadable, so it holds and
-    cannot hide a guarded line; one inside the front matter of a type 4 file
-    makes the front matter malformed, so it holds as well. JSON nested deeper
-    than 512 containers is unreadable, so what the parser can read does not
-    depend on the call's stack. They apply only to the globs a consumer lists.
+    can pass. Each rule applies only to the globs a consumer lists.
     "Well-formed" means the kit's own grammar, not YAML: a value that YAML
     would reject, or an anchor or alias, passes if the grammar accepts the block
     and the key is named or its block is unchanged. Recorded, not fixed.

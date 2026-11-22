@@ -355,13 +355,10 @@ Common semantics, which apply to all four types:
   objects.
 - **Readable.** A blob is readable when it is at most `CONTENT_MAX_BYTES`
   (1,048,576), valid UTF-8, free of NUL bytes and does not begin with U+FEFF
-  (a byte-order mark: common loaders strip it and read the content after it
-  as if it were not there, so a rule that looked at the unstripped text could
-  be evaded). Two rule types add a condition of their own: type 2 (a side must
-  also have no hidden line separator, below) and type 3 (JSON nested no deeper
-  than `JSON_MAX_DEPTH`, 512). An unreadable blob of a matched entry holds
-  under types 2 to 4 (detail `unreadable`). If the collector did not supply a blob that a matched
-  entry needs, or gave a side as absent where the status says it exists (the
+  (a byte-order mark). An unreadable blob of a matched entry holds under
+  types 2 to 4 (detail `unreadable`, subject to the type 3 add/delete rule).
+  If the collector did not supply a blob that a matched entry needs, or gave
+  a side as absent where the status says it exists (the
   base side of `M` and `D`, the head side of `A` and `M`) or as present where
   the status says it is absent, the verdict is `blocked:input`
   (`content-missing`): that is a collector fault, not a property of the
@@ -375,16 +372,14 @@ Common semantics, which apply to all four types:
   for one entry in the order of the types as listed below, and within a type
   in the order of the rules in the manifest array. The per-pull-request
   `too-large` reason follows all entries.
-- **Lines.** Lines are split at `\n`; one trailing `\r` is removed from each
-  line; a final line without a newline counts; an empty file has no lines.
-- **Hidden line separators (type 2).** Readers and editors also break a line
-  at a carriage return that does not end a CRLF, at U+000B, U+000C, U+0085,
-  U+2028 and U+2029, which the split above does not: a `Status:` line placed
-  after such a character looks like a new line to a reader and is not one to
-  the rule. A side of a type 2 entry is therefore unreadable (holds, detail
-  `unreadable`) if, after removing one trailing `\r` from each `\n`-terminated
-  line, it still contains any of those six characters. A final line that ends
-  in `\r` without a `\n` is not `\n`-terminated, so its `\r` counts.
+- **Lines.** Lines are split at `\n`, one `\r` immediately before each `\n`
+  is dropped, a final line without a newline counts, and an empty file has no
+  lines.
+
+`hold_on_line_change` treats a bare `\r`, U+000B, U+000C, U+0085, U+2028 or
+U+2029 as unreadable, `keys_only` treats JSON deeper than 512 containers as
+unreadable, and `front_matter_only` treats those separators in front matter
+or a `---` delimiter on its own after leading whitespace as malformed.
 
 **Type 1, `hold_on_add_delete`: array of globs.** An entry with status `A` or
 `D` whose path matches holds. Status `M` does not. Reason `rule-add-delete`,
@@ -415,16 +410,9 @@ when a line that matches `pattern` is added or removed.
 of distinct non-empty strings: top-level key names of a JSON object. A file
 under the glob may change only those keys.
 
-- *Parse*: each side that exists must be valid JSON whose top level is an
-  object, nested at most `JSON_MAX_DEPTH` (512) containers deep, and without a
-  duplicate key at any depth (duplicate keys are read differently by
-  different parsers). The depth is counted before `JSON.parse` runs, because
-  `JSON.parse` recurses and how deep it can go depends on the stack left at
-  the call: with a fixed cap, live and replay read the same files. A leading
-  byte-order mark is already unreadable. Otherwise the
-  entry holds with detail `unreadable`. The parser needs no dependency; a
-  strict tokenizer around `JSON.parse` is enough. Numbers are compared by
-  their exact decimal value, not as doubles.
+- *Parse*: each side that exists must be valid JSON with a top-level object
+  and unique keys within each object. Invalid input holds with detail
+  `unreadable`. Numbers are compared by their exact decimal value.
 - *Rule*: an entry with status `A` or `D` holds (detail `added` or
   `deleted`): a structured file under a keys-only rule is neither created nor
   removed unattended. This precedes the parse: for status `A` or `D` the
@@ -458,14 +446,7 @@ compared.
   makes the front matter malformed, as does a line before the first key line
   that is not blank, and a repeated key. A first line that starts with `---`
   but is not exactly `---` (a trailing space, a language tag) is malformed. A
-  side whose first line does not start with `---` has no front matter, which
-  is the same as an empty set of blocks, unless a reader that skips leading
-  whitespace would find an opener: a text that, after any run of spaces, tabs,
-  `\r`, `\n`, U+000B, U+000C, U+0085, U+2028 and U+2029, begins with `---`
-  followed by a line end (a line separator or the end of the text) is
-  malformed too. A blank line, a space or a form feed before the opener thus
-  holds and does not read as "no front matter". (A leading byte-order mark
-  never gets this far: the file is unreadable and holds.)
+  file without front matter has an empty set of blocks.
 - *Rule*: an entry holds (detail `front-matter-invalid`) if a side that exists
   has malformed front matter, or the file is unreadable (detail
   `unreadable`). Otherwise take, per side, the map from key to block text
@@ -473,21 +454,14 @@ compared.
   empty. The entry holds (detail `front-matter-changed`) unless every key
   that is not in `keys` is present on both sides with identical block text.
   An added or deleted file therefore passes only if every key it carries is
-  named. Because a malformed or removed front matter makes keys vanish,
-  turning front matter into body text (a changed opener, whitespace before
-  it) cannot hide a change, and a byte-order-mark prefix cannot hide it either, since it
-  makes the file unreadable.
+  named.
 - Reason `rule-front-matter`.
 - "Well-formed" means this section's grammar, not YAML. A value that YAML
   would reject, or an anchor or alias, passes if the grammar accepts the block
   and the block text is unchanged or the key is named (threat model residual
   12).
 - Not covered: a whole-file rule such as "no carriage returns anywhere in a
-  Markdown file" (section 11). A leading byte-order mark is covered by
-  readability for every file a rule matches, and hidden line separators by
-  the readability of type 2 files (above); a carriage return or one of those
-  separators on any line between the opener and the closer makes the front
-  matter malformed, so a type 4 file holds.
+  Markdown file" (section 11).
 
 **Evaluation and replay.** The core receives, with the diff entries, the
 blobs of each entry that matches a glob of types 2 to 4 (the `contents`
@@ -1074,7 +1048,7 @@ consumers after that is a recommendation, not a rule.
 | --- | --- |
 | Interactive lane (`interactive_auto`) for pull requests that match no lane | Not built (decision 2026-11-22). The rules an interactive merge depends on are the owner's own message in the session, a named pull request and a critic's waiver or convergence, and the gate sees none of them: the waiver is recorded in an agent-writable pull request body. In a backtest of one consumer with a forced interactive lane, 1 of 74 pull requests outside the queue lane got `merge` and the rest held or waited, mostly on paths the owner should see anyway |
 | `extra_check`: a consumer script, recorded contract below | Built only for the first rule the four content-rule types cannot express (open question 18). Declarative rules replay by construction, share one policy file and execute no consumer code; a script does none of these |
-| Content-rule extensions: a nested key path for `keys_only`; a literal leading `^` or trailing `$` in a line pattern; a whole-file rule (no carriage returns anywhere; a leading byte-order mark is already covered by readability, and carriage returns and other line separators by the readability of type 2 files); a fifth type "named sections of one Markdown file stay unchanged" | No consumer rule needs them yet except the last, which is the first candidate for the `extra_check` contract (open question 18) |
+| Content-rule extensions: a nested key path for `keys_only`; a literal leading `^` or trailing `$` in a line pattern; a whole-file rule against carriage returns; a fifth type "named sections of one Markdown file stay unchanged" | No consumer rule needs them yet except the last, which is the first candidate for the `extra_check` contract (open question 18) |
 | Reject `tier.default: "auto"` on a lane with `auto_merge: true` | Needs a schema version bump; no consumer's manifest uses `auto`. Do it at the first bump |
 | Process-state rules in the gate core, for example "hold while an open pull request is outside every lane" | A candidate home for the rule that an owner pull request being open stops the runner; the other home is the runner procedure. Decided at the first migration that needs it (open question 23). Never a content rule or a script |
 | The Phase 1 collector's NUL check reads every regular head blob whatever its size, before and apart from the content-rule size cap | Needs no rule of this slice: it is the existing check of section 5.4. Recorded so that a very large blob is sized (`git cat-file -s`) before it is read there too |
