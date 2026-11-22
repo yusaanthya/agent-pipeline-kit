@@ -294,7 +294,7 @@ test('collect 9: replay uses the first parent of the merge commit as the base an
   assert.equal(input.pr.draft, false);
   assert.equal(input.pr.mergeable, null);
   assert.equal(input.pr.merged, true);
-  assert.deepEqual(input.limits, ['manifest-by-commit-date', 'halt-label-timing', 'freeze-retarget-unknown']);
+  assert.deepEqual(input.limits, ['manifest-by-commit-date', 'halt-label-timing', 'freeze-retarget-unknown', 'reopen-history-unknown']);
   assert.deepEqual(input.haltIssues, [{ number: 3, createdAt: '2026-11-02T00:00:00Z', closedAt: '2026-11-03T00:00:00Z' }]);
   assert.deepEqual(input.pulls, [{ number: 9, headRef: 'preview', headRepo: 'owner/repo', baseRef: 'main', createdAt: '2026-11-01T00:00:00Z', closedAt: '2026-11-11T00:00:00Z' },
     { number: 10, headRef: 'preview', headRepo: 'fork/repo', baseRef: 'main', createdAt: '2026-11-05T00:00:00Z', closedAt: null }]);
@@ -347,6 +347,21 @@ test('collect 9g: replay does not request open-state halt issues or open pull re
   const paths = ghPaths(world);
   assert.ok(!paths.some((p) => p.includes('state=open')));
   assert.ok(paths.some((p) => p.includes('/issues?labels=pipeline-halt&state=all')));
+});
+
+test('collect 9i: replay reports that a halt issue closed and reopened around the merge is judged open', async () => {
+  // Closed Tuesday, reopened Thursday, merged Wednesday: the API keeps no close time, so it reads as open.
+  const world = makeWorld({
+    pr: mergedPr({ merged_at: '2026-11-11T12:00:00Z' }),
+    rest: {
+      '/repos/owner/repo/issues?labels=pipeline-halt&state=all': [{ number: 3, created_at: '2026-11-02T00:00:00Z', closed_at: null }],
+    },
+  });
+  const input = await collect(opts({ replay: true }), deps(world));
+  assert.ok(input.limits.includes('reopen-history-unknown'));
+  const verdict = evaluate(input);
+  assert.equal(verdict.verdict, 'wait:halt');
+  assert.ok(verdict.limits.includes('reopen-history-unknown'));
 });
 
 test('collect 9h: a rebase merge is not detected or flagged', async () => {

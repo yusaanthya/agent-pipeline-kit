@@ -178,6 +178,9 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
         pulls.push(pullOf(p, p.closed_at ?? null));
       }
     }
+    // Only the latest close time is known, so an item closed and reopened before the
+    // merge can look open at the merge time (a false wait, never a false merge).
+    if (haltIssues.length > 0 || pulls.length > 0) limits.push('reopen-history-unknown');
   }
 
   return {

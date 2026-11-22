@@ -579,6 +579,11 @@ that stay true after the merge:
 | Freeze | pull requests with the freeze head and base that were open at the merge time; base retargeting is not reconstructed (a limit); the head repository is ignored, as live |
 | Open state, `mergeable` | not evaluated (GitHub merged it) |
 
+Halt issues and freeze pull requests are judged from their latest close time
+only. One closed before the merge and reopened later can look open at the
+merge time, so replay reports the limit `reopen-history-unknown` whenever it
+collected any. It can only add a stop to a replayed verdict, never remove one.
+
 Replay assumes that the pull request was merged by a squash or a merge commit.
 Rebase merges are unsupported: the first parent of a rebased commit is not the
 base tip at merge time, so the replay of such a merge is not meaningful and the

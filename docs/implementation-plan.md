@@ -290,6 +290,11 @@ Replay mode (`replay: true`), differences:
   head branch is `<head>` from any repository (the live rule ignores
   `headRepo`; the API head filter needs an owner, so the head is matched
   locally); add the limit `freeze-retarget-unknown`.
+- Reopen history: only the latest `closed_at` is read, so an issue or pull
+  request closed and reopened before the merge can look open at the merge
+  time. When any halt issue or freeze candidate was collected, add the limit
+  `reopen-history-unknown`. The error only adds a stop, never enables a merge.
+
 ## 5. CLI contract
 
 ```text
