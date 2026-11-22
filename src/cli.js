@@ -1,24 +1,26 @@
 #!/usr/bin/env node
-// agent-pipeline-gate: evaluate | replay | backtest.
+// agent-pipeline-gate: evaluate | replay | backtest | check-paths.
 import { readFile as fsReadFile, realpath } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collect as realCollect } from './collect/collect.js';
+import { collect as realCollect, collectPaths } from './collect/collect.js';
 import { makeGithub } from './collect/github.js';
 import { isRefName } from './collect/git.js';
 import { run as realRun } from './collect/proc.js';
-import { evaluate } from './core/verdict.js';
+import { evaluate, evaluatePaths } from './core/verdict.js';
 
 const USAGE = [
   'usage: agent-pipeline-gate evaluate --repo OWNER/NAME --pr N --repo-dir DIR [--lane NAME] [--manifest FILE]',
   '       agent-pipeline-gate replay   --repo OWNER/NAME --pr N --repo-dir DIR [--manifest FILE]',
   '       agent-pipeline-gate backtest --repo OWNER/NAME --repo-dir DIR --since ISO --until ISO [--base BRANCH] [--manifest FILE]',
+  '       agent-pipeline-gate check-paths --repo OWNER/NAME --repo-dir DIR --base BRANCH --head SHA [--lane NAME] [--item ID] [--manifest FILE]',
 ];
 
 const COMMANDS = {
   evaluate: { required: ['repo', 'pr', 'repo-dir'], optional: ['lane', 'manifest'] },
   replay: { required: ['repo', 'pr', 'repo-dir'], optional: ['manifest'] },
   backtest: { required: ['repo', 'repo-dir', 'since', 'until'], optional: ['base', 'manifest'] },
+  'check-paths': { required: ['repo', 'repo-dir', 'base', 'head'], optional: ['lane', 'item', 'manifest'] },
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
@@ -51,6 +53,11 @@ function parseArgs(argv) {
   }
   if (Object.hasOwn(opts, 'lane') && !/^[a-z][a-z0-9-]*$/.test(opts.lane)) throw new UsageError('--lane is not a valid lane name');
   if (Object.hasOwn(opts, 'base') && !isRefName(opts.base)) throw new UsageError('--base is not a valid branch name');
+  if (Object.hasOwn(opts, 'head') && !/^[0-9a-f]{40}$/.test(opts.head)) throw new UsageError('--head must be a full 40-character commit SHA');
+  if (Object.hasOwn(opts, 'item')) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(opts.item)) throw new UsageError('--item is not a valid queue item id');
+    if (!Object.hasOwn(opts, 'lane')) throw new UsageError('--item requires --lane');
+  }
   for (const name of ['since', 'until']) {
     if (Object.hasOwn(opts, name) && !(DATE.test(opts[name]) && !Number.isNaN(Date.parse(opts[name])))) {
       throw new UsageError(`--${name} must be an ISO 8601 date or timestamp`);
@@ -115,6 +122,48 @@ async function runOne(command, opts, io, kit) {
   }
   io.out(JSON.stringify(out));
   return result.verdict === 'merge' ? 0 : 1;
+}
+
+// The change-set conditions for a base branch and a head commit, with no pull request.
+async function runCheckPaths(opts, io, kit) {
+  const head = opts.head;
+  let result;
+  let input;
+  try {
+    input = await collectPaths({
+      repo: opts.repo,
+      repoDir: opts['repo-dir'],
+      base: opts.base,
+      head,
+      lane: opts.lane ?? null,
+      item: opts.item ?? null,
+      manifestFile: opts.manifest ?? null,
+    }, { run: io.run, readFile: io.readFile });
+    result = evaluatePaths(input);
+  } catch (error) {
+    input = null;
+    result = {
+      result: 'blocked:input',
+      lane: null,
+      reasons: [{ verdict: 'blocked:input', code: 'collect-failed', detail: String(error?.message ?? error) }],
+    };
+  }
+  if (result.usage !== undefined) {
+    io.err(result.usage);
+    for (const line of USAGE) io.err(line);
+    return 2;
+  }
+  io.out(JSON.stringify({
+    repo: opts.repo,
+    kit,
+    base: input?.base ?? null,
+    mergeBase: input?.mergeBase ?? null,
+    head,
+    lane: result.lane,
+    result: result.result,
+    reasons: result.reasons,
+  }));
+  return result.result === 'clear' ? 0 : 1;
 }
 
 async function runBacktest(opts, io, kit) {
@@ -187,6 +236,7 @@ export async function main(argv, overrides = {}) {
     return 2;
   }
   const kit = await kitCommit(io.run, io.cliDir);
+  if (parsed.command === 'check-paths') return runCheckPaths(parsed.opts, io, kit);
   if (parsed.command === 'backtest') return runBacktest(parsed.opts, io, kit);
   return runOne(parsed.command, parsed.opts, io, kit);
 }
