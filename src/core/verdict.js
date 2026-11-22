@@ -165,7 +165,7 @@ function changeSetReasons(manifest, lane, reportId, files, contents) {
     if (f.headMode === '100644' && f.headHasNul !== false) add('hold:owner', 'binary', f.path);
     // The item's own report is not a floor path and is exempt from the lane's
     // tier checks. Compared exactly, not case-insensitively.
-    const ownReport = isQueue && f.path === `${REPORT_DIR}/${reportId}.md` &&
+    const ownReport = isQueue && typeof reportId === 'string' && reportId !== '' && f.path ===`${REPORT_DIR}/${reportId}.md` &&
       (f.status === 'A' || f.status === 'M') && f.headMode === '100644';
     if (!ownReport && FLOOR.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'floor', lower);
     if (manifest.hold_paths.some((pattern) => matches(pattern, f.path))) add('hold:owner', 'hold-path', lower);

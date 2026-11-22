@@ -100,6 +100,13 @@ test('item report in the diff / with and without --item / clear only for the nam
   assert.deepEqual(codes(noItem.result), ['floor']);
 });
 
+test('queue lane without --item / a report named null.md / held, not exempt', async () => {
+  const { code, result } = await checkPaths(world(['.agent-line/reports/null.md']), ['--lane', 'runner']);
+  assert.equal(result.result, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(codes(result), ['floor']);
+});
+
 test('head is the merge base / nothing differs / blocked:empty-diff', async () => {
   const { code, result } = await checkPaths(world([]), ['--lane', 'nightly']);
   assert.equal(result.result, 'blocked:empty-diff');
