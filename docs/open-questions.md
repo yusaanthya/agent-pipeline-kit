@@ -272,7 +272,10 @@ push commits with no per-path tool call. The intended rule, a requirement of
 the hook slice: for a push, or any call that updates a remote ref, compute the
 raw diff of the pushed range against the remote ref, evaluate every path of it
 against the write-time column of the floor, and deny when the range cannot be
-determined. Open: how the hook learns the remote ref and range for each
+determined. The baseline is specified in design 8.1: the remote's own commit
+for an existing target ref; for a target ref that does not exist yet (the first
+push of a new topic branch), the merge base with the lane base read from the
+remote; anything else is indeterminate and denies. Open: how the hook learns the remote ref and range for each
 shape of call (`git push`, the API's ref and file writes), and which of them
 it intercepts at all (question 6).
 

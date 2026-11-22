@@ -820,6 +820,24 @@ Decisions the hook returns:
   raw diff of the pushed range against the remote ref, evaluate every path of
   it against the write-time column, and deny when the range cannot be
   determined (open question 32).
+- The baseline of that range is trusted state, never a local ref the agent
+  can move (a remote-tracking ref, a local branch, `FETCH_HEAD`). When the
+  target ref exists on the remote, the baseline is its commit as the remote
+  reports it at the time of the call. When it does not exist, as on the first
+  push of a new topic branch, the baseline is the merge base of the pushed
+  commit and the base of the queue lane that `PIPELINE_LANE` names, with that
+  base's commit read from the remote at the time of the call and fetched by
+  explicit URL. So a normal first publication is checked by its own commits
+  and is not denied for lacking a remote ref. The range is indeterminate, and
+  the hook denies, when the remote cannot be read, the target ref is absent
+  and `PIPELINE_LANE` names no queue lane of a readable manifest, the lane
+  base cannot be fetched, or the pushed commit and the lane base have no
+  merge base. Acceptance: on a first push of a new topic branch whose commits
+  on top of the lane base change only `src/a.js`, the hook makes no
+  decision; the same push with one commit that also changes
+  `.github/workflows/ci.yml` is denied; a first push of a branch with no
+  history in common with the lane base, or while the lane base cannot be
+  fetched, is denied.
 
 ### 8.2 Procedure call, in sessions with several repositories
 

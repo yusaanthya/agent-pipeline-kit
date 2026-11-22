@@ -905,4 +905,14 @@ any call that updates a remote ref it takes the raw diff of the pushed range
 against the remote ref, passes every path to `writeDecision`, and denies when
 the range cannot be determined (design 8.1, open question 32). Bash can write
 files and push with no per-path tool call, so a file-write matcher alone is
-not enough.
+not enough. The baseline is the one design 8.1 names, and the adapter's tests
+include these cases, all in runner mode with a queue lane whose base is read
+from a fake remote:
+
+| # | Case | Expected |
+| --- | --- | --- |
+| H1 | push to an existing remote ref; the range changes `src/a.js` only | no decision |
+| H2 | first push of a new topic branch (no remote ref); its commits on top of the lane base change `src/a.js` only | no decision; the baseline is the merge base with the lane base read from the remote, not a local ref |
+| H3 | as H2, one commit also changes `.github/workflows/ci.yml` | deny |
+| H4 | as H2, a local remote-tracking ref of the lane base moved to the pushed commit | as H2 and H3: the local ref is not read |
+| H5 | first push; no merge base with the lane base; the lane base cannot be fetched; the remote cannot be read; `PIPELINE_LANE` names no queue lane | deny (range indeterminate) |
