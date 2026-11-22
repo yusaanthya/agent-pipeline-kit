@@ -622,9 +622,12 @@ test/core/content.test.js, test/core/manifest.test.js, test/core/verdict.test.js
 ```
 
 `contentTargets(manifest, files)` returns the paths of entries that match a
-glob of `hold_on_line_change`, `keys_only` or `front_matter_only`, excluding
-entries whose head mode exists and is not `100644` (this includes status `T`;
-they already hold on mode). A deleted entry has no head mode and is a target. Type 1 needs no contents. The collector reads, for each
+glob of `hold_on_line_change`, `keys_only` or `front_matter_only`, excluding,
+as two independent conditions, every entry of status `T` and every entry whose
+head mode exists and is not `100644`; both already hold on mode. Neither
+condition implies the other: a symlink turned into a regular file is status `T`
+with head mode `100644`, and an added executable is status `A` with head mode
+`100755`. A deleted entry has no head mode and is a target. Type 1 needs no contents. The collector reads, for each
 target, the blob at the merge base (state `absent` when the status is `A`) and
 at the head (state `absent` when the status is `D`). The core, not the
 collector, decides readability: size over the cap (`bytes: null`), invalid
@@ -717,7 +720,7 @@ Rules (`content.test.js`, through `evaluateContentRules`):
 | B4 | `keys_only` | a head that begins with U+FEFF | `rule-keys` (unreadable) |
 | B5 | all | a U+FEFF that is not at the start of the file | readable: evaluated as text |
 | F8 | `front_matter_only` | unreadable blob | `rule-front-matter` (unreadable) |
-| X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T`; head mode `100755`, `120000` or `160000`; a type 1 glob only; no rules | the matching paths; excluded; excluded; empty; empty |
+| X1 | all | `contentTargets`: paths of statuses A, M, D matching a type 2 to 4 glob; status `T` with head mode `100644` (a symlink turned into a regular file); status `T` with head mode `120000`; head mode `100755`, `120000` or `160000` with status `A` or `M`; a type 1 glob only; no rules | the matching paths; excluded; excluded; excluded; empty; empty |
 | X2 | all | a target path missing from `contents`; a side `absent` for status `M`; the head side `absent` for status `A`; the base side `present` for status `A`; the head side `present` for status `D` | `blocked:input` (`content-missing`) |
 | X3 | all | no reason contains any text of any file, for every row above | holds |
 
