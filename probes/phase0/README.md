@@ -4,10 +4,11 @@ A kit for checking whether a Claude Code cloud scheduled task can use a
 repository-local hook to gate merges. The [runbook](runbook.md) defines eight
 checks and how to interpret the evidence.
 
-Status: **reviewed, never run in a cloud session.** The scripts passed
-syntax and dry-run checks on a local machine (listed at the end of the
-runbook); nothing has been executed inside Claude Code or on GitHub. Treat
-every expected outcome in the runbook as a prediction, not a result.
+Status: **run once in a cloud scheduled task on 2026-11-22.** The results are
+in the repository README. Item 4 (`ask`) was answered by a person after 102
+seconds, short of the runbook's 15 minutes, and is treated as not usable
+unattended. The expected outcomes in the runbook were written before the run
+and are kept as written.
 
 Contents:
 

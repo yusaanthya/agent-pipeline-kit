@@ -1,6 +1,6 @@
 # Phase 0 runbook: eight hook-gate behaviours in a cloud scheduled task
 
-Nothing here has been run. Local checks that were run are listed at the end of section 6.
+Written before the run of 2026-11-22; the outcome is summarised in the repository README. Local checks that were run beforehand are listed at the end of section 6.
 
 ## 1. How the test works
 
