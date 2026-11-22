@@ -1009,9 +1009,12 @@ the kind of pull request, would have a pull request of one kind merged by the
 other kind's routine replayed under the other lane and held (a backtest of
 such a consumer inferred this for two of its six pull requests of one kind). That
 consumer changes its marker to name the lane before it migrates (open question
-13). History that predates a consumer's marker cannot be replayed by lane: the
-`backtest` command passes no lane, so each such pull request replays as
-`no-lane` (open question 24).
+13). History that predates a consumer's marker cannot be replayed by caller
+lane: the `backtest` command passes no lane, so each such pull request whose
+lane would come from its caller (head not on a queue branch) replays as
+`no-lane` (open question 24). A pull request whose head is a queue branch
+(`claude/item-<id>`) still resolves to the queue lane from its branch, with or
+without a marker, when the manifest declares a queue lane.
 
 Content rules (section 5.4.1) add no time dependence: replay reads the same
 git objects as live mode, from the manifest in force at the merge time.

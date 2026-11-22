@@ -194,8 +194,10 @@ have stopped the run, a gap that matters only if the gate replaces the step.
 Decided at the first migration that needs it.
 
 **24. The lane source when backtesting history that predates a marker.**
-Kit-level. `backtest` passes no lane, and a merge without a marker has no lane
-in replay. In the multi-repo routine's backtest no merge carried the marker, so
+Kit-level. `backtest` passes no lane, and a merge without a marker whose lane
+would come from its caller has no lane in replay; a pull request on a queue
+branch still resolves to the queue lane from its branch (design 5.2). In the
+multi-repo routine's backtest no merge carried the marker, so
 0 of 79 pull requests resolved a lane; a title prefix the procedure itself
 uses resolved 13, and a rule on the head branch name had 33 percent
 precision. Not decided: whether `backtest` takes an explicit
