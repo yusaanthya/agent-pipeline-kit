@@ -1,5 +1,5 @@
-// Git reads use argument arrays. These operations leave the checkout and refs
-// untouched and never execute pull request content.
+// Git commands use argument arrays. They leave the worktree untouched and read
+// pull request blobs as data.
 import { parseNumstat, parseRawDiff } from './parse.js';
 
 const SHA = /^[0-9a-f]{40}$/;
