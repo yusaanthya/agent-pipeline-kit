@@ -1032,11 +1032,17 @@ Each consumer migrates as its own piece of work, in three steps:
 1. Backtest and shadow: the gate is backtested on merged pull requests and the
    desk replays the previous day's merges. Nothing changes in the consumer.
 2. Overlay: manifest, `rules.md` and hook are added; the gate can only deny;
-   the old written rules stay in force. The result can only be stricter than
-   today. The manifest's path policy is written as an allowlist from the start;
-   an allowlist is stricter than a denylist, so it fits this step.
+   the old written rules stay in force. A merge needs both the old rules and
+   the gate to allow it, so the result can only be stricter than today. The
+   manifest's path policy form is decided in decisions.md (2026-11-22, path
+   policy on runner lanes); an allowlist is not stricter than the old list in
+   every case, for example a broad allowed directory may contain a file the
+   old list held, which is why the old rules stay in force here.
 3. Switch: the old merge text becomes a pointer to the gate and duplicated
-   rules are deleted. The gate is then the only judge. Prose copies of the
+   rules are deleted. The gate is then the only judge. Before any prose is
+   deleted, each old hold that still applies is checked to have coverage in
+   the manifest (a `hold_paths` entry or a path outside the allowlist) or an
+   explicit, recorded retirement. Prose copies of the
    path policy become pointers to the manifest at this step and not before,
    and only once the path check (section 8.6) exists and the manifest's read
    branch is settled (open question 1). Each consumer lists what it deletes
