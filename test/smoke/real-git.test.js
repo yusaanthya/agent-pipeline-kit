@@ -17,9 +17,14 @@ const identity = {
   GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
 };
 
+// The production `run` spawns git with `process.env`, so the fixture isolates
+// itself by replacing every caller GIT_* variable (GIT_DIR, GIT_INDEX_FILE,
+// GIT_WORK_TREE, GIT_CONFIG_*, ...) in `process.env` for the whole file and
+// restoring them afterwards.
+let saved;
 let root;
 let work;
-const sh = (...args) => execFileSync('git', args, { cwd: work, encoding: 'utf8', env: { ...process.env, ...identity } }).trim();
+const sh = (...args) => execFileSync('git', args, { cwd: work, encoding: 'utf8' }).trim();
 const put = (path, text) => {
   mkdirSync(dirname(join(work, path)), { recursive: true });
   writeFileSync(join(work, path), text);
@@ -39,11 +44,14 @@ const manifest = (holdPaths) => JSON.stringify({
 });
 
 before(() => {
+  saved = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('GIT_')));
+  for (const k of Object.keys(saved)) delete process.env[k];
+  Object.assign(process.env, identity);
   root = mkdtempSync(join(tmpdir(), 'kit-smoke-'));
   work = join(root, 'work');
   const origin = join(root, 'origin.git');
   mkdirSync(origin);
-  execFileSync('git', ['init', '--bare', '-q', '-b', 'main'], { cwd: origin, env: { ...process.env, ...identity } });
+  execFileSync('git', ['init', '--bare', '-q', '-b', 'main'], { cwd: origin });
   mkdirSync(work);
   sh('init', '-q', '-b', 'main');
   sh('remote', 'add', 'origin', origin);
@@ -60,7 +68,11 @@ before(() => {
   sh('push', '-q', 'origin', 'trunk');
 });
 
-after(() => rmSync(root, { recursive: true, force: true }));
+after(() => {
+  for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+  Object.assign(process.env, saved);
+  rmSync(root, { recursive: true, force: true });
+});
 
 // Pushes a pull request head built from `main` and returns the gate's answer.
 async function evaluatePullRequest(change) {
