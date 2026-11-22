@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/hook-bootstrap.js\" https://github.com/OWNER/agent-pipeline-kit.git",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/hook-bootstrap.mjs\" https://github.com/OWNER/agent-pipeline-kit.git",
             "onFailure": "block"
           }
         ]

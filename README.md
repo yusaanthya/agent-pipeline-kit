@@ -145,7 +145,7 @@ npm test
 
 The hook blocks an agent's GitHub merge tool call unless the gate says `merge` for that pull request. It runs before the call, allows non-merge tools untouched, and never asks: it exits `0` to allow or `2` to block, with one line on stderr naming the verdict and its first reason. The call must also match the verdict: `expectedHeadSha` equal to the verdict's head, `merge_method` `squash`, and a `commit_message` that contains the lane marker (`Auto-Merged-By: ...`) as an exact line. Any failure blocks, including a missing manifest or kit commit, a `gh` or `git` error, a gate crash and malformed tool input. The merge tool is matched by name, `mcp__<server>__merge_pull_request`.
 
-1. Copy [`examples/hook-bootstrap.js`](examples/hook-bootstrap.js) to `.claude/hooks/` in the consumer repository.
+1. Copy [`examples/hook-bootstrap.mjs`](examples/hook-bootstrap.mjs) to `.claude/hooks/` in the consumer repository.
 2. Merge [`examples/settings.json`](examples/settings.json) into the repository's `.claude/settings.json` and replace the kit URL. Keep `"onFailure": "block"` on every gate hook entry: without it a failing hook does not stop the call. The `permissions.deny` list closes the tools that skip the merge call: auto-merge, direct file writes and `gh pr merge`.
 3. Pin the kit commit in `.agent-line/manifest.json` on the default branch. The bootstrap fetches that default branch from `origin`, fetches the pinned commit from the kit URL into a temporary directory, checks that the checkout is that commit and runs its `hook` command. It does not check that the commit is reachable from the kit's default branch.
 

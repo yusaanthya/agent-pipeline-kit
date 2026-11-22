@@ -1,4 +1,4 @@
-// Smoke test of examples/hook-bootstrap.js against real git, with local repositories
+// Smoke test of examples/hook-bootstrap.mjs against real git, with local repositories
 // standing in for the consumer's origin and the kit's public remote (no network).
 // The kit's cli.js is a stub that reports which commit it came from.
 import { test, before, after } from 'node:test';
@@ -14,7 +14,7 @@ const identity = {
   GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid',
   GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
 };
-const bootstrap = new URL('../../examples/hook-bootstrap.js', import.meta.url).pathname;
+const bootstrap = new URL('../../examples/hook-bootstrap.mjs', import.meta.url).pathname;
 const stub = (name, code) => `let s = ''; for await (const c of process.stdin) s += c;\nprocess.stderr.write('${name} ' + process.argv.slice(2).join(' ') + ' ' + s);\nprocess.exitCode = s.includes('block') ? 2 : ${code};\n`;
 
 let saved;

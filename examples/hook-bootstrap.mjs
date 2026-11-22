@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook bootstrap. Copy it into the consumer repository and run it as
-//   node hook-bootstrap.js KIT_GIT_URL
+//   node hook-bootstrap.mjs KIT_GIT_URL
 // It fetches the kit commit pinned in .agent-line/manifest.json on the default
 // branch of `origin`, checks it out into a temporary directory, and runs that
 // checkout's `hook` command with the tool call on stdin. Any failure exits 2,
@@ -20,7 +20,7 @@ let tmp = null;
 let code = 2;
 try {
   const kitUrl = process.argv[2];
-  if (!kitUrl) throw new Error('usage: hook-bootstrap.js KIT_GIT_URL');
+  if (!kitUrl) throw new Error('usage: hook-bootstrap.mjs KIT_GIT_URL');
   const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
   const input = readFileSync(0);
 
