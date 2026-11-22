@@ -1,4 +1,4 @@
-// Content rules (design 5.4.1, implementation plan section 9). Pure: no I/O,
+// Content rules (design 5.4.1). Pure: no I/O,
 // no clock, no randomness. A content rule can only add a hold, and no reason
 // it returns carries text from a file.
 import { CONTENT_MAX_BYTES, JSON_MAX_DEPTH } from './constants.js';

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agent-pipeline-gate: evaluate | replay | backtest (implementation plan 5).
+// agent-pipeline-gate: evaluate | replay | backtest (implementation plan section 5).
 import { readFile as fsReadFile, realpath } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

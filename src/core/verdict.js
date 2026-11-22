@@ -1,4 +1,4 @@
-// The verdict function (design sections 3 to 5, implementation plan 3.1).
+// The verdict function (design sections 3 to 5).
 // Pure: no I/O, no clock, no randomness, no environment reads. It never
 // mutates its input.
 import {

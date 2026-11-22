@@ -155,7 +155,7 @@ test('a __proto__ lane name is rejected', () => {
   assert.equal(result.code, 'manifest-invalid');
 });
 
-// Content rules (implementation plan 9.4, rows M1 to M8).
+// Content rules (rows M1 to M8).
 const ruleSet = () => ({
   hold_on_add_delete: ['docs/specs/**'],
   hold_on_line_change: [{ glob: 'docs/specs/**', pattern: '^Status:' }],

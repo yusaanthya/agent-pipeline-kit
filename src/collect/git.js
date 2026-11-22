@@ -1,4 +1,4 @@
-// git reads (implementation plan section 4). Arguments are arrays; nothing
+// git reads (design 4). Arguments are arrays; nothing
 // here checks out, merges, resets, pushes or executes pull request content.
 import { parseNumstat, parseRawDiff } from './parse.js';
 

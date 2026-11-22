@@ -1,4 +1,4 @@
-// The input collector (implementation plan section 4): reads GitHub REST and
+// The input collector (design sections 4, 9): reads GitHub REST and
 // git objects and builds a GateInput. It holds no decisions, never checks out
 // and never executes pull request code.
 import { CONTENT_MAX_BYTES, HALT_LABEL, QUEUE_BRANCH, QUEUE_DIR } from '../core/constants.js';
