@@ -46,17 +46,21 @@ merge. You are not asked to review code: there is none in this change.
   inference.
 - **Two backtests of private consumers.** They are not in this repository and
   you cannot check them; treat the figures as the author's report. One covers
-  101 merged pull requests of one month in the game consumer: 10 were runner
-  self-merges and all 10 replay as `merge`; 90 of 101 agree with what happened
-  and none is a past miss of a written rule; an independent recomputation of
-  the path holds over all 101 found no mismatch; a four-entry trial allowlist
-  gave the same verdict on the ten self-merges (computed from the backtest
-  facts, not re-run through the kit). The other covers 79 merged pull requests
-  of the multi-repo consumer: none carried the marker, so replay assigned a
-  lane to 0 of 79 (13 with the title prefix its procedure uses); comparing
-  its existing script with the kit on 158 forced pairs gave 156 agreements;
-  of the two differences, one is a gap that a front-matter rule closes and in
-  the other the kit is the stricter. A separate case, an automation pull
+  101 merged pull requests of one month in the game consumer: 10 were
+  inferred to be runner self-merges (the author's classification of the merge
+  history, not a record kept by the runner) and all 10 replay as `merge`; 90
+  of 101 agree with what happened and none is a past miss of a written rule;
+  an independent recomputation of the path holds over all 101 found no
+  mismatch; a four-entry trial allowlist gave the same verdict on the ten
+  inferred self-merges (computed from the backtest facts, not re-run through
+  the kit). The other covers 79 merged pull requests of the multi-repo
+  consumer: none carried the marker, so replay assigned a lane to 0 of 79 (13
+  with the title prefix its procedure uses); comparing its existing script
+  with the kit on 158 forced pairs gave 156 agreements on a binary pass or
+  fail only, not on verdict or reasons, counted after `check-missing` results
+  from the state before CI had run were ignored; of the two differences, one
+  is a gap that a front-matter rule closes and in the other the kit is the
+  stricter. A separate case, an automation pull
   request merged while an owner pull request was open, is process state.
 - **Probes.** The policy questions 26 to 31 and the Phase 0 hook checks have
   not been run. Nothing in this change relies on an outcome.

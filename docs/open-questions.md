@@ -43,8 +43,9 @@ allowlist, not a carry-over of its current list. A security critic had
 recommended it because a merge there deploys production; a continuity critic
 had pointed out it is a behaviour change, and an allowlist is stricter, which
 the overlay step allows. A trial allowlist (`internal/**`, `cmd/**`,
-`web/src/**`, the test scripts, `readme.md`) passed all 10 sampled runner pull
-requests. The entries are chosen at this consumer's migration from its
+`web/src/**`, the test scripts, `readme.md`) passed all 10 sampled pull
+requests inferred to be runner merges (the author's classification, not a
+record kept by the runner). The entries are chosen at this consumer's migration from its
 backtest.
 
 **4. Interactive behaviour on `fix`, `update`, `wait` and `blocked`.**

@@ -120,8 +120,9 @@ Why:
 - An allowlist is stricter than a denylist, so it fits the overlay step
   (design section 10), which may only be stricter than today.
 - Evidence from the backtests (private; aggregate only): a trial allowlist of
-  four entries gave the same verdict on all ten runner self-merges of one
-  consumer (computed from the backtest facts, not re-run through the kit), and
+  four entries gave the same verdict on all ten inferred runner self-merges
+  of one consumer (the author's classification of the merge history; computed
+  from the backtest facts, not re-run through the kit), and
   the other consumer's backtest already ran as an allowlist.
 - Outside practice keeps a short list only as a backstop and allowlists safe
   change categories for automated landing (research note). The evidence is of
@@ -325,7 +326,7 @@ manifest is read from when its working branch is not the default branch
   rejected earlier by the owner.
 - **Rejected on 2026-11-22:** a risk score instead of a path policy (it needs
   incident data and a model; a 150-line cap alone would have held nine of ten
-  runner self-merges of one consumer for no written reason); an owner-signed
+  inferred runner self-merges of one consumer for no written reason); an owner-signed
   policy tag (it gives policy integrity without a second identity but does
   not remove the list); a runner that never merges its own pull requests,
   with the owner approving in batches (it gives up what the kit is for); a
