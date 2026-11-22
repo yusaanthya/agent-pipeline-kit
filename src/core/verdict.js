@@ -5,6 +5,7 @@ import {
   ACTIONS_APP_SLUG, FLOOR, QUEUE_BRANCH, REPORT_DIR, VERDICT_ORDER,
 } from './constants.js';
 import { matches } from './glob.js';
+import { evaluateContentRules } from './content.js';
 import { parseManifest } from './manifest.js';
 import { readMergeField } from './queue.js';
 import { readCodexState, codexReason } from './codex.js';
@@ -21,6 +22,8 @@ import { readCodexState, codexReason } from './codex.js';
  * @property {string} baseSha              live: tip of pr.baseRef; replay: first parent of the merge commit
  * @property {boolean} baseIsAncestor
  * @property {string|null} [queueItemText] present only when headRef matches QUEUE_BRANCH; null if the file is absent at baseSha; the core reads it only when the lane is the queue lane
+ * @property {Record<string, {base: ContentSide, head: ContentSide}>} [contents]
+ *           keyed by the diff path; present exactly for the paths contentTargets(manifest, files) returns (design 5.4.1)
  * @property {object[]} checkRuns          REST check runs on headSha: id, name, app.slug, status, conclusion, started_at, completed_at
  * @property {{comments: object[], reviewComments: object[], reviews: object[]}} codex
  *           REST issue comments (id, user.id, user.login, body, created_at, updated_at),
@@ -33,6 +36,11 @@ import { readCodexState, codexReason } from './codex.js';
  * @property {string|null} mergeMessage    replay only: the merge commit's message; null for live
  * @property {string|null} [mergeCommit]   replay only: the merge commit's SHA, for the CLI output; the core does not read it
  * @property {string[]} limits             facts the collector could not establish as of asOf (design section 9)
+ */
+
+/**
+ * @typedef {{state: 'absent'} | {state: 'present', size: number, bytes: Uint8Array|null}} ContentSide
+ *           bytes is null when size exceeds CONTENT_MAX_BYTES: the collector does not read the blob
  */
 
 /**
@@ -249,6 +257,9 @@ export function evaluate(input) {
         add('hold:owner', 'not-in-allowlist', lower);
       }
     }
+    // Content rules (design 5.4.1) apply to every lane and to the own report,
+    // and come after the entry's other reasons. They only add reasons.
+    for (const reason of evaluateContentRules(manifest, [f], input.contents)) add(reason.verdict, reason.code, reason.detail);
     changed += (f.added ?? 0) + (f.deleted ?? 0);
   }
   if (lane !== null && lane.max_changed_lines !== null && changed > lane.max_changed_lines) {

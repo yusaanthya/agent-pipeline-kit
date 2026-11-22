@@ -120,6 +120,7 @@ export function makeWorld(over = {}) {
         return a.includes('--raw') ? reply(diffRaw) : reply(numstat);
       case 'cat-file': {
         if (a[1] === '-e') return blobs[a[2]] !== undefined ? reply() : reply('', 128, 'fatal: path does not exist');
+        if (a[1] === '-s') return blobs[a[2]] !== undefined ? reply(`${Buffer.byteLength(blobs[a[2]])}\n`) : reply('', 128, 'fatal: not a valid object name');
         return blobs[a[2]] !== undefined ? reply(blobs[a[2]]) : reply('', 128);
       }
       case 'log': return reply(log);

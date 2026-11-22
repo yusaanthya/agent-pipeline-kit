@@ -58,6 +58,9 @@ export const FLOOR = Object.freeze([
   '**/gemfile.lock',
 ]);
 
+// Largest blob a content rule reads (design 5.4.1, "Readable"): 1 MiB.
+export const CONTENT_MAX_BYTES = 1048576;
+
 export const HALT_LABEL = 'pipeline-halt';
 
 export const QUEUE_BRANCH = /^claude\/item-([a-z0-9][a-z0-9-]*)$/;

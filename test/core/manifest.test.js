@@ -154,3 +154,123 @@ test('a __proto__ lane name is rejected', () => {
   assert.equal(result.ok, false);
   assert.equal(result.code, 'manifest-invalid');
 });
+
+// Content rules (implementation plan 9.4, rows M1 to M8).
+const ruleSet = () => ({
+  hold_on_add_delete: ['docs/specs/**'],
+  hold_on_line_change: [{ glob: 'docs/specs/**', pattern: '^Status:' }],
+  keys_only: [{ glob: 'tools/*/config.json', keys: ['version'] }],
+  front_matter_only: [{ glob: 'docs/guides/**/*.md', keys: ['description'] }],
+});
+const withRules = (rules) => change((m) => { m.content_rules = rules; });
+const parse = (m) => parseManifest(JSON.stringify(m));
+
+test('M1: a manifest without content_rules is valid and has none', () => {
+  const result = parse(valid());
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result.manifest, 'content_rules'), false);
+});
+
+test('M2: one valid entry of each type, all four, and empty arrays', () => {
+  const all = ruleSet();
+  for (const rules of [
+    {},
+    all,
+    { hold_on_add_delete: all.hold_on_add_delete },
+    { hold_on_line_change: all.hold_on_line_change },
+    { keys_only: all.keys_only },
+    { front_matter_only: all.front_matter_only },
+    { hold_on_add_delete: [], hold_on_line_change: [], keys_only: [], front_matter_only: [] },
+    { hold_on_line_change: [{ glob: 'a', pattern: 'x' }, { glob: 'b/**', pattern: 'y$' }], keys_only: [{ glob: 'a', keys: ['k1', 'k2'] }, { glob: 'b', keys: ['k1'] }] },
+  ]) {
+    const result = parse(withRules(rules));
+    assert.deepEqual(result.ok === false ? result.errors : [], [], JSON.stringify(rules));
+    assert.deepEqual(result.manifest.content_rules, rules);
+  }
+});
+
+const badRules = [
+  // M3
+  ['M3 content_rules is null', null],
+  ['M3 content_rules is an array', []],
+  ['M3 content_rules is a string', 'rules'],
+  ['M3 content_rules is a number', 1],
+  ['M3 an unknown key in content_rules', { hold_on_everything: [] }],
+  ['M3 an unknown key beside valid ones', { ...ruleSet(), extra: [] }],
+  ['M3 hold_on_add_delete is an object', { hold_on_add_delete: {} }],
+  ['M3 hold_on_add_delete is a string', { hold_on_add_delete: 'docs/**' }],
+  ['M3 hold_on_line_change is null', { hold_on_line_change: null }],
+  ['M3 keys_only is an object', { keys_only: { glob: 'a', keys: ['k'] } }],
+  ['M3 front_matter_only is a string', { front_matter_only: 'x' }],
+  // M4
+  ['M4 an entry that is a string', { hold_on_line_change: ['docs/**'] }],
+  ['M4 an entry that is null', { keys_only: [null] }],
+  ['M4 an entry that is an array', { front_matter_only: [[]] }],
+  ['M4 hold_on_line_change without glob', { hold_on_line_change: [{ pattern: 'x' }] }],
+  ['M4 hold_on_line_change without pattern', { hold_on_line_change: [{ glob: 'a' }] }],
+  ['M4 keys_only without keys', { keys_only: [{ glob: 'a' }] }],
+  ['M4 keys_only without glob', { keys_only: [{ keys: ['k'] }] }],
+  ['M4 front_matter_only without keys', { front_matter_only: [{ glob: 'a' }] }],
+  ['M4 an unknown key in a hold_on_line_change entry', { hold_on_line_change: [{ glob: 'a', pattern: 'x', flags: 'i' }] }],
+  ['M4 an unknown key in a keys_only entry', { keys_only: [{ glob: 'a', keys: ['k'], pattern: 'x' }] }],
+  ['M4 keys in a hold_on_line_change entry', { hold_on_line_change: [{ glob: 'a', pattern: 'x', keys: ['k'] }] }],
+  ['M4 an unknown key in a front_matter_only entry', { front_matter_only: [{ glob: 'a', keys: ['k'], extra: 1 }] }],
+  // M5
+  ['M5 hold_on_add_delete entry that is a number', { hold_on_add_delete: [1] }],
+  ['M5 hold_on_add_delete entry that is an object', { hold_on_add_delete: [{ glob: 'a' }] }],
+  ['M5 hold_on_add_delete glob that is empty', { hold_on_add_delete: [''] }],
+  ['M5 hold_on_add_delete glob with a leading slash', { hold_on_add_delete: ['/docs/**'] }],
+  ...['?', '[', ']', '{', '}', '!', '\\'].map((c) => [`M5 hold_on_add_delete glob with ${c}`, { hold_on_add_delete: [`a${c}b`] }]),
+  ['M5 hold_on_line_change glob that is invalid', { hold_on_line_change: [{ glob: 'a?b', pattern: 'x' }] }],
+  ['M5 hold_on_line_change glob that is not a string', { hold_on_line_change: [{ glob: 1, pattern: 'x' }] }],
+  ['M5 keys_only glob that is invalid', { keys_only: [{ glob: '[a]', keys: ['k'] }] }],
+  ['M5 front_matter_only glob that is empty', { front_matter_only: [{ glob: '', keys: ['k'] }] }],
+  // M6
+  ['M6 pattern empty', { hold_on_line_change: [{ glob: 'a', pattern: '' }] }],
+  ['M6 pattern ^', { hold_on_line_change: [{ glob: 'a', pattern: '^' }] }],
+  ['M6 pattern $', { hold_on_line_change: [{ glob: 'a', pattern: '$' }] }],
+  ['M6 pattern ^$', { hold_on_line_change: [{ glob: 'a', pattern: '^$' }] }],
+  ['M6 pattern that is a number', { hold_on_line_change: [{ glob: 'a', pattern: 1 }] }],
+  ['M6 pattern that is null', { hold_on_line_change: [{ glob: 'a', pattern: null }] }],
+  ['M6 pattern that is an array', { hold_on_line_change: [{ glob: 'a', pattern: ['x'] }] }],
+  ['M6 pattern with a newline', { hold_on_line_change: [{ glob: 'a', pattern: 'x\ny' }] }],
+  // M7
+  ['M7 keys empty', { keys_only: [{ glob: 'a', keys: [] }] }],
+  ['M7 keys with a duplicate', { keys_only: [{ glob: 'a', keys: ['k', 'k'] }] }],
+  ['M7 keys with an empty string', { front_matter_only: [{ glob: 'a', keys: [''] }] }],
+  ['M7 keys with a non-string', { keys_only: [{ glob: 'a', keys: [1] }] }],
+  ['M7 keys that is a string', { keys_only: [{ glob: 'a', keys: 'k' }] }],
+  ['M7 keys that is null', { front_matter_only: [{ glob: 'a', keys: null }] }],
+  ['M7 keys that is an object', { keys_only: [{ glob: 'a', keys: { k: 1 } }] }],
+];
+for (const [name, rules] of badRules) {
+  test(`${name} is invalid`, () => {
+    const result = parse(withRules(rules));
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'manifest-invalid');
+    assert.ok(result.errors.length > 0);
+    assert.ok(result.errors.every((e) => typeof e === 'string' && e.length > 0));
+    // The manifest is refused for the rule, not because the key is unknown.
+    assert.ok(result.errors.some((e) => e.startsWith('content_rules') && !e.includes('unknown key "content_rules"')), result.errors.join('; '));
+  });
+}
+
+test('M7 a key that differs only by case is a distinct key', () => {
+  assert.equal(parse(withRules({ keys_only: [{ glob: 'a', keys: ['version', 'Version'] }] })).ok, true);
+});
+
+test('content_rules is not accepted below the top level', () => {
+  assert.equal(parse(change((m) => { m.lanes.runner.content_rules = {}; })).ok, false);
+});
+
+test('M8: the content_rules fragment of the design merged into the example is valid', () => {
+  const design = readFileSync(new URL('../../docs/design.md', import.meta.url), 'utf8');
+  const blocks = [...design.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const example = JSON.parse(blocks.find((b) => b.includes('"schema": 1')));
+  const fragment = blocks.map((b) => JSON.parse(b)).find((b) => Object.hasOwn(b, 'content_rules') && !Object.hasOwn(b, 'schema'));
+  const merged = { ...example, ...(fragment ?? {}) };
+  assert.ok(merged.content_rules, 'the design shows content_rules in the example or in a fragment');
+  const result = parse(merged);
+  assert.deepEqual(result.ok === false ? result.errors : [], []);
+  assert.equal(result.ok, true);
+});

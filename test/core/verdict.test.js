@@ -335,6 +335,102 @@ row('64b', 'allowlist does not hold the own report, but holds docs/a.md only', (
   i.files.push(file('docs/a.md'));
 }, 'hold:owner', 'not-in-allowlist');
 
+// Rows 65 to 74 (content rules, design 5.4.1). The baseline has no content_rules.
+const bytesOf = (text) => new TextEncoder().encode(text);
+const blob = (text) => ({ state: 'present', size: bytesOf(text).length, bytes: bytesOf(text) });
+const rules = (content) => (input) => editManifest(input, (m) => { m.content_rules = content; });
+const setContents = (input, path, base, head) => { input.contents = { ...(input.contents ?? {}), [path]: { base: blob(base), head: blob(head) } }; };
+const allow = (...patterns) => (input) => editManifest(input, (m) => { m.lanes.runner.tier = { default: 'hold', auto: patterns, strong_review: [] }; });
+const KEYS = { keys_only: [{ glob: 'tools/*/config.json', keys: ['version'] }] };
+const versionOnly = (input) => {
+  rules(KEYS)(input);
+  input.files.push(file('tools/a/config.json'));
+  setContents(input, 'tools/a/config.json', '{"version":1,"x":1}', '{"version":2,"x":1}');
+};
+
+row(65, 'hold_on_add_delete holds an added file that the allowlist allows', (i) => {
+  allow('src/**', 'docs/**')(i);
+  rules({ hold_on_add_delete: ['docs/**'] })(i);
+  i.files.push(addedFile('docs/x.md'));
+}, 'hold:owner', 'rule-add-delete');
+row('65b', 'a modified file under hold_on_add_delete is not held', (i) => {
+  rules({ hold_on_add_delete: ['docs/**'] })(i);
+  i.files.push(file('docs/x.md'));
+}, 'merge', null);
+row(66, 'a content-rule path that is also in hold_paths', (i) => {
+  editManifest(i, (m) => { m.hold_paths = ['docs/private/**']; });
+  rules({ hold_on_add_delete: ['docs/private/**'] })(i);
+  i.files.push(addedFile('docs/private/a.md'));
+}, 'hold:owner', 'hold-path', ['rule-add-delete']);
+row(67, 'a content-rule path that is a floor path', (i) => {
+  rules({ hold_on_add_delete: ['.github/**'] })(i);
+  i.files.push(addedFile('.github/ci.yml'));
+}, 'hold:owner', 'floor', ['rule-add-delete']);
+row(68, 'the own report matched by a content rule it violates', (i) => {
+  rules({ hold_on_add_delete: ['.agent-line/reports/**'] })(i);
+}, 'hold:owner', 'rule-add-delete');
+row(69, 'keys_only with only the named key changed, in the allowlist', (i) => {
+  allow('src/**', 'tools/**')(i);
+  versionOnly(i);
+}, 'merge', null);
+row(70, 'keys_only with only the named key changed, outside the allowlist', (i) => {
+  allow('src/**')(i);
+  versionOnly(i);
+}, 'hold:owner', 'not-in-allowlist');
+row('70b', 'keys_only with an unnamed key changed, in the allowlist', (i) => {
+  allow('src/**', 'tools/**')(i);
+  versionOnly(i);
+  setContents(i, 'tools/a/config.json', '{"version":1,"x":1}', '{"version":1,"x":2}');
+}, 'hold:owner', 'rule-keys');
+row(71, 'contents missing for a target', (i) => {
+  versionOnly(i);
+  delete i.contents;
+}, 'blocked:input', 'content-missing');
+row('71b', 'a target whose base side is absent although the status is M', (i) => {
+  versionOnly(i);
+  i.contents['tools/a/config.json'].base = { state: 'absent' };
+}, 'blocked:input', 'content-missing');
+row('71c', 'a missing target with a hold: blocked comes first', (i) => {
+  rules({ ...KEYS, hold_on_add_delete: ['docs/**'] })(i);
+  i.files.push(file('tools/a/config.json'), addedFile('docs/x.md'));
+}, 'blocked:input', 'content-missing', ['rule-add-delete']);
+row('71d', 'contents given for a path that no rule targets are ignored', (i) => {
+  setContents(i, 'src/x.go', 'a', 'b');
+}, 'merge', null);
+row('71e', 'no rule matches: no contents are needed', (i) => {
+  rules(KEYS)(i);
+}, 'merge', null);
+row('75', 'content rules apply in a caller lane', (i) => {
+  asCaller(i);
+  rules({ hold_on_add_delete: ['src/**'] })(i);
+  i.files = [addedFile('src/new.go')];
+}, 'hold:owner', 'rule-add-delete');
+row('76', 'content rules apply when no lane resolves', (i) => {
+  i.pr.headRef = 'feature/x';
+  rules({ hold_on_add_delete: ['src/**'] })(i);
+  i.files = [addedFile('src/new.go')];
+}, 'hold:owner', 'no-lane', ['rule-add-delete']);
+row('77', 'a file under hold_on_line_change with a changed Status line', (i) => {
+  rules({ hold_on_line_change: [{ glob: 'docs/specs/**', pattern: '^Status:' }] })(i);
+  i.files.push(file('docs/specs/a.md'));
+  setContents(i, 'docs/specs/a.md', 'Status: draft\nbody\n', 'Status: final\nbody\n');
+}, 'hold:owner', 'rule-line-change');
+row('77b', 'a file under hold_on_line_change whose body changes only', (i) => {
+  rules({ hold_on_line_change: [{ glob: 'docs/specs/**', pattern: '^Status:' }] })(i);
+  i.files.push(file('docs/specs/a.md'));
+  setContents(i, 'docs/specs/a.md', 'Status: draft\nbody\n', 'Status: draft\nnew body\n');
+}, 'merge', null);
+row('78', 'a file under front_matter_only whose description changes only', (i) => {
+  rules({ front_matter_only: [{ glob: 'docs/guides/**/*.md', keys: ['description'] }] })(i);
+  i.files.push(file('docs/guides/a.md'));
+  setContents(i, 'docs/guides/a.md', '---\nname: x\ndescription: a\n---\nbody\n', '---\nname: x\ndescription: b\n---\nbody\n');
+}, 'merge', null);
+row('78b', 'a file under front_matter_only with a malformed front matter', (i) => {
+  rules({ front_matter_only: [{ glob: 'docs/guides/**/*.md', keys: ['description'] }] })(i);
+  i.files.push(file('docs/guides/a.md'));
+  setContents(i, 'docs/guides/a.md', '---\nname: x\n---\nbody\n', '--- \nname: x\n---\nbody\n');
+}, 'hold:owner', 'rule-front-matter');
+
 for (const r of rows) {
   test(`verdict ${r.id}: ${r.name}`, () => {
     const input = baseline();
@@ -564,4 +660,87 @@ test('the baseline files and manifest are valid for the documented baseline', ()
   assert.equal(JSON.parse(input.manifestText).lanes.runner.marker, 'Auto-Merged-By: test-runner');
   assert.equal(input.baseSha, BASE_SHA);
   assert.deepEqual(baselineManifest().hold_paths, []);
+});
+
+test('verdict 72: replay with content rules gives the same verdict and reasons as live', () => {
+  const scenarios = [
+    (i) => { allow('src/**', 'tools/**')(i); versionOnly(i); },
+    (i) => { allow('src/**', 'tools/**')(i); versionOnly(i); setContents(i, 'tools/a/config.json', '{"version":1,"x":1}', '{"version":1,"x":9}'); },
+    (i) => { rules({ hold_on_add_delete: ['docs/**'] })(i); i.files.push(addedFile('docs/x.md')); },
+    (i) => { versionOnly(i); delete i.contents; },
+  ];
+  for (const make of scenarios) {
+    const live = baseline();
+    make(live);
+    const replayed = structuredClone(live);
+    replay(replayed);
+    replayed.asOf = '2026-11-10T12:00:00Z';
+    const a = evaluate(live);
+    const b = evaluate(replayed);
+    assert.equal(b.verdict, a.verdict);
+    assert.deepEqual(b.reasons, a.reasons);
+  }
+});
+
+test('verdict 74: content reasons come in the order of design 5.4.1, and too-large follows all entries', () => {
+  const input = baseline();
+  editManifest(input, (m) => {
+    m.hold_paths = ['docs/b.md'];
+    m.lanes.runner.tier = { default: 'hold', auto: ['src/**'], strong_review: [] };
+    m.lanes.runner.max_changed_lines = 3;
+    m.content_rules = {
+      hold_on_add_delete: ['docs/**'],
+      hold_on_line_change: [{ glob: 'docs/**', pattern: '^Status:' }],
+    };
+  });
+  input.files = [
+    addedFile('docs/a.md', { added: 5 }),
+    file('docs/b.md', { status: 'D', headMode: null, headHasNul: null, added: 0, deleted: 2 }),
+    addedFile('.agent-line/reports/sim-1.md', { added: 1 }),
+  ];
+  input.contents = {
+    'docs/a.md': { base: { state: 'absent' }, head: blob('Status: new\n') },
+    'docs/b.md': { base: blob('plain\n'), head: { state: 'absent' } },
+  };
+  const result = evaluate(input);
+  assert.deepEqual(result.reasons, [
+    { verdict: 'hold:owner', code: 'not-in-allowlist', detail: 'docs/a.md' },
+    { verdict: 'hold:owner', code: 'rule-add-delete', detail: 'docs/a.md: added' },
+    { verdict: 'hold:owner', code: 'rule-line-change', detail: 'docs/a.md: line-changed' },
+    { verdict: 'hold:owner', code: 'hold-path', detail: 'docs/b.md' },
+    { verdict: 'hold:owner', code: 'not-in-allowlist', detail: 'docs/b.md' },
+    { verdict: 'hold:owner', code: 'rule-add-delete', detail: 'docs/b.md: deleted' },
+    { verdict: 'hold:owner', code: 'too-large', detail: '8 > 3' },
+  ]);
+});
+
+test('verdict 73: with content rules, evaluate does not mutate its input and is deterministic', () => {
+  const make = () => {
+    const i = baseline();
+    allow('src/**', 'tools/**', 'docs/**')(i);
+    rules({ ...KEYS, hold_on_add_delete: ['docs/**'], hold_on_line_change: [{ glob: 'docs/**', pattern: '^Status:' }] })(i);
+    i.files.push(file('tools/a/config.json'), file('docs/s.md'));
+    setContents(i, 'tools/a/config.json', '{"version":1,"x":1}', '{"version":2,"x":2}');
+    setContents(i, 'docs/s.md', 'Status: a\n', 'Status: b\n');
+    return i;
+  };
+  for (const input of [deepFreeze(make()), (() => { const i = make(); replay(i); return deepFreeze(i); })()]) {
+    const copy = structuredClone(input);
+    const first = evaluate(input);
+    const second = evaluate(input);
+    assert.deepEqual(first, second);
+    assert.deepEqual(input, copy);
+    assert.deepEqual(first.reasons.map((r) => r.code), ['rule-keys', 'rule-line-change']);
+  }
+});
+
+test('no reason of a content rule carries file text', () => {
+  const input = baseline();
+  rules({ hold_on_line_change: [{ glob: 'docs/**', pattern: 'SECRET-TEXT' }], keys_only: [{ glob: 'docs/*.json', keys: ['v'] }] })(input);
+  input.files.push(file('docs/a.md'), file('docs/b.json'));
+  setContents(input, 'docs/a.md', 'SECRET-TEXT one\n', 'SECRET-TEXT two\n');
+  setContents(input, 'docs/b.json', '{"SECRET-TEXT":1}', '{"SECRET-TEXT":2}');
+  const result = evaluate(input);
+  assert.deepEqual(result.reasons.map((r) => r.code), ['rule-line-change', 'rule-line-change', 'rule-keys']);
+  assert.ok(!JSON.stringify(result).includes('SECRET-TEXT'));
 });

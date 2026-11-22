@@ -122,7 +122,8 @@ export function asCaller(input, laneExtra = {}) {
 }
 
 export function deepFreeze(value) {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+  // A typed array with elements cannot be frozen; the blobs of `contents` are typed arrays.
+  if (value && typeof value === 'object' && !ArrayBuffer.isView(value) && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const v of Object.values(value)) deepFreeze(v);
   }
