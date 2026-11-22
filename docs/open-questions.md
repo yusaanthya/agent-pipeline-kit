@@ -134,3 +134,38 @@ decision.
 as passing for required checks; the kit gives `blocked:check`. Backtests will
 show whether any consumer's named check is ever skipped on a merged pull
 request.
+
+## Recorded review findings (not fixed)
+
+Found by the code review of the first slice. Each needs an input not seen in a
+real run, or belongs to a later slice, so it is recorded here and not fixed.
+
+- **R1. Line budget and git attributes.** `git diff --numstat` honours `-diff`
+  and `binary` attributes, so a text file under such an attribute reports no
+  line counts, counts as 0 lines towards `max_changed_lines`, and still passes
+  the NUL check. `.gitattributes` is a floor path, so only an owner-merged
+  attribute can cause it. Fix when a consumer has such an attribute: hold on
+  missing counts for a NUL-free regular file, or count lines from the blobs.
+- **R2. The collector trusts the local git configuration.** It fetches from
+  the `origin` remote of the directory it is given and runs with that
+  directory's hooks and URL rewrites. A changed remote could supply a false
+  trust root. Deliberate circumvention; to be closed in the hook slice (fetch
+  by explicit URL, disable hooks).
+- **R3. `evaluate --manifest FILE` in live mode.** A manifest passed on the
+  command line replaces the trust root, and the output does not say so. The
+  hook slice must not pass this option; restricting it to `replay` and
+  `backtest` is the likely fix.
+- **R4. Check run without a start time.** Such a run sorts as oldest, so an
+  older completed run of the same name can win. Not seen from GitHub Actions.
+- **R5. Codex finding flags cover the whole pull request.** On real data a
+  head reviewed clean can still carry `has_any_findings: true` from unresolved
+  threads on earlier commits; the gate then gives `blocked:codex`
+  (`findings-unverified`), as the source script does. It fails closed; expect
+  it in backtests.
+- **R6. Check-name collisions.** Any GitHub Actions job with a listed name
+  counts, whichever workflow ran it. A per-consumer manifest concern, related
+  to question 14.
+- **R7. Test fixtures are synthetic.** They copy the observed shapes of Codex
+  output; none is an unmodified capture.
+- **R8. CI actions are referenced by tag, not by commit.** The workflow has
+  read-only permission.
