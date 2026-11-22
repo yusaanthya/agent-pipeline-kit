@@ -1,4 +1,4 @@
-// Manifest, schema version 1 (design section 6). Any invalid manifest is
+// Manifest, schema version 1. Any invalid manifest is
 // `blocked:manifest`. Unknown keys are invalid at every level.
 import { validatePattern } from './glob.js';
 import { validateLinePattern } from './content.js';
@@ -69,7 +69,7 @@ function checkKeyNames(value, where, errors) {
   if (!ok) errors.push(`${where}: must be a non-empty array of distinct non-empty strings`);
 }
 
-// Content rules (design 5.4.1 and 6). They only add holds.
+// Content rules. They only add holds.
 function checkContentRules(rules, errors) {
   if (!isObject(rules)) {
     errors.push('content_rules: must be an object');

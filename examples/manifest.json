@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "kit": "0123456789abcdef0123456789abcdef01234567",
+  "checks": ["check"],
+  "codex_clean": "no_blocking",
+  "hold_paths": ["docs/private/**"],
+  "content_rules": {
+    "hold_on_add_delete": ["docs/specs/**"],
+    "hold_on_line_change": [{ "glob": "docs/specs/**", "pattern": "^Status:" }],
+    "keys_only": [{ "glob": "tools/*/config.json", "keys": ["version"] }],
+    "front_matter_only": [{ "glob": "docs/guides/**/*.md", "keys": ["description"] }]
+  },
+  "lanes": {
+    "runner": {
+      "kind": "queue",
+      "base": "preview",
+      "auto_merge": true,
+      "tier": {
+        "default": "hold",
+        "auto": ["src/**", "docs/**"],
+        "strong_review": []
+      },
+      "max_changed_lines": null,
+      "freeze_while_open": { "head": "preview", "base": "main" },
+      "marker": "Auto-Merged-By: example-runner"
+    }
+  }
+}

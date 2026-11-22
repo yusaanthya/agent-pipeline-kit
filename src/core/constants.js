@@ -1,4 +1,4 @@
-// Constants of the gate (design sections 3.1, 5.2, 5.4, 5.5, 5.8).
+// Constants of the gate.
 
 // The trusted Codex bot. Both values must match for an item to be trusted.
 // Copied from scripts/codex-review-gate.mjs in quorum-election-simulator.
@@ -7,7 +7,7 @@ export const CODEX_BOT = Object.freeze({ id: 199175422, login: 'chatgpt-codex-co
 // app.slug of check runs created by GitHub Actions.
 export const ACTIONS_APP_SLUG = 'github-actions';
 
-// Paths whose change always needs the owner (design 5.4). Lowercase.
+// Paths whose change always needs the owner. Lowercase.
 export const FLOOR = Object.freeze([
   // CI and pipeline
   '.github/**',
@@ -58,12 +58,12 @@ export const FLOOR = Object.freeze([
   '**/gemfile.lock',
 ]);
 
-// Largest blob a content rule reads (design 5.4.1, "Readable"): 1 MiB.
+// A content rule reads at most 1 MiB per blob.
 export const CONTENT_MAX_BYTES = 1048576;
 
-// Deepest nesting of a JSON file that `keys_only` reads (design 5.4.1,
-// "Readable"). JSON.parse recurses, and how deep it can go depends on the
-// stack left at the call, so a fixed cap keeps live and replay in agreement.
+// Deepest nesting of a JSON file that `keys_only` reads. JSON.parse can recur
+// only as far as the remaining stack allows, so a fixed cap keeps live and
+// replay in agreement.
 export const JSON_MAX_DEPTH = 512;
 
 export const HALT_LABEL = 'pipeline-halt';
@@ -72,7 +72,7 @@ export const QUEUE_BRANCH = /^claude\/item-([a-z0-9][a-z0-9-]*)$/;
 export const QUEUE_DIR = '.agent-line/queue';
 export const REPORT_DIR = '.agent-line/reports';
 
-// Precedence of design 3.1, first wins. `blocked` stands for every `blocked:*`
+// Verdict precedence. The first match wins. `blocked` stands for every `blocked:*`
 // verdict and `wait` for `wait:ci`, `wait:codex` and `wait:mergeable`.
 export const VERDICT_ORDER = Object.freeze([
   'wait:halt',

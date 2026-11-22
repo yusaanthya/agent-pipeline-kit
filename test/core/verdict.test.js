@@ -335,7 +335,7 @@ row('64b', 'allowlist does not hold the own report, but holds docs/a.md only', (
   i.files.push(file('docs/a.md'));
 }, 'hold:owner', 'not-in-allowlist');
 
-// Rows 65 to 74 (content rules, design 5.4.1). The baseline has no content_rules.
+// Content rules. The baseline has no content_rules.
 const bytesOf = (text) => new TextEncoder().encode(text);
 const blob = (text) => ({ state: 'present', size: bytesOf(text).length, bytes: bytesOf(text) });
 const rules = (content) => (input) => editManifest(input, (m) => { m.content_rules = content; });
@@ -682,7 +682,7 @@ test('verdict 72: replay with content rules gives the same verdict and reasons a
   }
 });
 
-test('verdict 74: content reasons come in the order of design 5.4.1, and too-large follows all entries', () => {
+test('verdict 74: content reasons follow other reasons for each entry, and too-large follows all entries', () => {
   const input = baseline();
   editManifest(input, (m) => {
     m.hold_paths = ['docs/b.md'];

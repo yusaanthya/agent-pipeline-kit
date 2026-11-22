@@ -1,12 +1,8 @@
 # Phase 0 probe kit
 
-A kit for checking, in a Claude Code cloud scheduled task, the eight behaviours
-that [design section 8.5](../../docs/design.md#85-phase-0-dependencies) lists
-as unverified: whether a repository's hooks fire there, whether they fail
-closed, whether an environment variable reaches them, what a hook's `ask` does
-without a person, whether the kit can be fetched anonymously, whether the hook
-set follows a branch switch, the names of the GitHub tools, and whether every
-merge path carries an expected head SHA.
+A kit for checking whether a Claude Code cloud scheduled task can use a
+repository-local hook to gate merges. The [runbook](runbook.md) defines eight
+checks and how to interpret the evidence.
 
 Status: **reviewed, never run in a cloud session.** The scripts passed
 syntax and dry-run checks on a local machine (listed at the end of the
@@ -29,10 +25,13 @@ a session's repository, so the hooks under `repo/.claude/` take effect only in
 a session started inside `repo/`, or in a repository that contains `repo/`'s
 files at its root. Do not copy them into a real consumer.
 
-Relation to the open questions: the results decide the fallbacks of design
-section 8.5 (hook or procedure call), and inform
-[open questions](../../docs/open-questions.md) 1 (does a hook load after a
-branch switch), 2 and 6 (what the hook can intercept, and which GitHub tool
-names to match), and 4 (what `ask` does in a scheduled task). They do not
-answer the policy probes (questions 26 to 31), which concern the runner's
-GitHub credentials and the platform, not hooks.
+For a consumer integrating the gate, the checks inform these fallbacks.
+
+| Probe result | Fallback |
+| --- | --- |
+| Repository hooks do not load, fail-closed handling is unavailable, or the hook set after a branch switch is unverified | Call the gate CLI explicitly before merging. |
+| The lane environment variable does not reach the hook | Pass the lane explicitly when calling the gate CLI from the task. |
+| A hook's `ask` stalls or silently allows a scheduled action | Use `ask` only in sessions explicitly marked interactive. |
+| The scheduled task cannot fetch the pinned kit | Vendor the kit into the consumer repository. |
+| GitHub tool names have a different prefix | Match the observed tool names without assuming a fixed prefix. |
+| A merge path cannot carry the expected head SHA | Refuse that path. |

@@ -1,4 +1,4 @@
-// The verdict function (design sections 3 to 5).
+// The verdict function.
 // Pure: no I/O, no clock, no randomness, no environment reads. It never
 // mutates its input.
 import {
@@ -23,7 +23,7 @@ import { readCodexState, codexReason } from './codex.js';
  * @property {boolean} baseIsAncestor
  * @property {string|null} [queueItemText] present only when headRef matches QUEUE_BRANCH; null if the file is absent at baseSha; the core reads it only when the lane is the queue lane
  * @property {Record<string, {base: ContentSide, head: ContentSide}>} [contents]
- *           keyed by the diff path; present exactly for the paths contentTargets(manifest, files) returns (design 5.4.1)
+ *           keyed by the diff path; present exactly for the paths contentTargets(manifest, files) returns
  * @property {object[]} checkRuns          REST check runs on headSha: id, name, app.slug, status, conclusion, started_at, completed_at
  * @property {{comments: object[], reviewComments: object[], reviews: object[]}} codex
  *           REST issue comments (id, user.id, user.login, body, created_at, updated_at),
@@ -35,7 +35,7 @@ import { readCodexState, codexReason } from './codex.js';
  *           live: open pull requests; replay: candidates for the freeze, any state
  * @property {string|null} mergeMessage    replay only: the merge commit's message; null for live
  * @property {string|null} [mergeCommit]   replay only: the merge commit's SHA, for the CLI output; the core does not read it
- * @property {string[]} limits             facts the collector could not establish as of asOf (design section 9)
+ * @property {string[]} limits             facts the collector could not establish as of asOf
  */
 
 /**
@@ -155,12 +155,12 @@ export function evaluate(input) {
     };
   };
 
-  // 1. Halt.
+  // Halt.
   for (const issue of input.haltIssues ?? []) {
     if (openAt(issue, tMs)) add('wait:halt', 'halt-issue-open', String(issue.number));
   }
 
-  // 2. Manifest.
+  // Manifest.
   const parsed = parseManifest(input.manifestText);
   if (!parsed.ok) {
     add('blocked:manifest', parsed.code, parsed.errors[0]);
@@ -168,8 +168,7 @@ export function evaluate(input) {
   }
   const { manifest } = parsed;
 
-  // 3. Lane (design 5.2). A queue-form head counts only when the manifest
-  // declares a queue lane.
+  // A queue-form head counts only when the manifest declares a queue lane.
   const laneNames = Object.keys(manifest.lanes);
   const queueName = laneNames.find((name) => manifest.lanes[name].kind === 'queue') ?? null;
   const queueMatch = QUEUE_BRANCH.exec(pr.headRef);
@@ -201,7 +200,7 @@ export function evaluate(input) {
   const isQueue = lane !== null && lane.kind === 'queue';
   const reportId = isQueue ? queueMatch[1] : null;
 
-  // 4. Freeze.
+  // Freeze.
   if (lane !== null && lane.freeze_while_open) {
     const { head, base } = lane.freeze_while_open;
     for (const p of input.pulls ?? []) {
@@ -209,7 +208,7 @@ export function evaluate(input) {
     }
   }
 
-  // 5.1 Origin and state.
+  // Origin and state.
   if (typeof pr.headRepo !== 'string' || pr.headRepo.toLowerCase() !== String(input.repo).toLowerCase()) {
     add('hold:owner', 'fork');
   }
@@ -219,7 +218,7 @@ export function evaluate(input) {
     if (!f.pathBytesOk) add('blocked:input', 'path-encoding', f.path);
   }
 
-  // 5.2 Lane and base.
+  // Lane and base.
   for (const [verdict, code, detail] of laneReasons) add(verdict, code, detail);
   if (laneName === null && !laneBlocked) add('hold:owner', 'no-lane');
   if (lane !== null) {
@@ -227,7 +226,7 @@ export function evaluate(input) {
     if (!lane.auto_merge) add('hold:owner', 'auto-merge-off');
   }
 
-  // 5.3 Queue item.
+  // Queue item.
   if (isQueue) {
     if (typeof input.queueItemText !== 'string') {
       add('hold:owner', 'queue-item-missing');
@@ -238,7 +237,7 @@ export function evaluate(input) {
     }
   }
 
-  // 5.4 Change set.
+  // Change set.
   let changed = 0;
   for (const f of input.files) {
     const lower = f.path.toLowerCase();
@@ -257,7 +256,7 @@ export function evaluate(input) {
         add('hold:owner', 'not-in-allowlist', lower);
       }
     }
-    // Content rules (design 5.4.1) apply to every lane and to the own report,
+    // Content rules apply to every lane and to the own report,
     // and come after the entry's other reasons. They only add reasons.
     for (const reason of evaluateContentRules(manifest, [f], input.contents)) add(reason.verdict, reason.code, reason.detail);
     changed += (f.added ?? 0) + (f.deleted ?? 0);
@@ -266,7 +265,7 @@ export function evaluate(input) {
     add('hold:owner', 'too-large', `${changed} > ${lane.max_changed_lines}`);
   }
 
-  // 5.5 Checks.
+  // Checks.
   if (manifest.checks === 'none') {
     add('hold:owner', 'checks-none');
   } else {
@@ -287,7 +286,7 @@ export function evaluate(input) {
     }
   }
 
-  // 5.6 Codex.
+  // Codex.
   const codexState = readCodexState({
     headSha: pr.headSha,
     comments: input.codex.comments,
@@ -299,14 +298,14 @@ export function evaluate(input) {
   const codex = codexReason(codexState, manifest.codex_clean);
   if (codex !== null) add(codex.verdict, codex.code, codex.detail);
 
-  // 5.7 Ancestry and mergeability.
+  // Ancestry and mergeability.
   if (!input.baseIsAncestor) add('update:base', 'base-not-ancestor');
   if (!replay) {
     if (pr.mergeable === false && input.baseIsAncestor) add('blocked:not-mergeable', 'not-mergeable');
     else if (pr.mergeable !== true && pr.mergeable !== false) add('wait:mergeable', 'mergeable-unknown');
   }
 
-  // 5.9 Owner signals.
+  // Owner signals.
   if (pr.draft !== false) add('hold:owner', 'draft');
   const title = typeof pr.title === 'string' ? pr.title.toLowerCase() : null;
   if (title === null || title.includes('[failed]') || title.includes('[needs-decision]')) {

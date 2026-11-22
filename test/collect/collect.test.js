@@ -409,7 +409,7 @@ test('collect content C1: without targets no blob is read for content and conten
     const input = await collect(opts(), deps(world));
     assert.deepEqual(input.contents, {});
     assert.ok(!catFileCalls(world).some((a) => a[0] === '-s'));
-    // The only blob reads are the head NUL checks that Phase 1 already makes.
+    // The only blob reads are the checks for NUL bytes in head files.
     assert.deepEqual(catFileCalls(world).filter((a) => a[0] === 'blob' && /^[0-9a-f]{40}$/.test(a[1])).map((a) => a[1]), [SHAS.S_NEW, SHAS.S_NEW]);
   }
 });

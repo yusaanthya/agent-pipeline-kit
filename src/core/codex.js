@@ -1,4 +1,4 @@
-// Codex review state (design 5.6): a port of the consumers' Codex review gate
+// Codex review state: a port of the consumers' Codex review gate
 // script, with the review-body parsing moved into the core. Pure: the caller
 // passes the REST objects GitHub returns.
 import { CODEX_BOT } from './constants.js';
@@ -152,7 +152,7 @@ function securityReason(security) {
 }
 
 /**
- * Maps a Codex state to a reason by the manifest's `codex_clean` (design 5.6).
+ * Maps a Codex state to a reason by the manifest's `codex_clean`.
  * @param {'no_blocking'|'no_findings'} mode
  * @returns {{verdict: string, code: string, detail?: string}|null}
  */

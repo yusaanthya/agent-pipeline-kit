@@ -1,5 +1,4 @@
-// GitHub REST reads through `gh api` (design 4). REST
-// only: GraphQL is not used. No decisions here.
+// GitHub REST reads through `gh api`. No decisions here.
 
 const MAX_PAGES = 100;
 const PER_PAGE = 100;

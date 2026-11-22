@@ -1,6 +1,5 @@
-// Content rules (design 5.4.1). Pure: no I/O,
-// no clock, no randomness. A content rule can only add a hold, and no reason
-// it returns carries text from a file.
+// Content rules are pure. They perform no I/O and use no clock or randomness.
+// A content rule can only add a hold, and no reason it returns carries file text.
 import { CONTENT_MAX_BYTES, JSON_MAX_DEPTH } from './constants.js';
 import { matches } from './glob.js';
 
@@ -18,7 +17,7 @@ export function splitLines(text) {
 }
 
 // A line pattern is a non-empty literal with an optional leading "^" and an
-// optional trailing "$" (design 5.4.1, type 2). Nothing else is special.
+// optional trailing "$". Nothing else is special.
 function readLinePattern(pattern) {
   if (typeof pattern !== 'string') return null;
   let literal = pattern;
@@ -250,9 +249,8 @@ function looksLikeIndentedOpener(text) {
 const KEY_LINE = /^[A-Za-z0-9_][A-Za-z0-9_-]*:/;
 
 /**
- * The front matter of a Markdown text (design 5.4.1, type 4): the map from
- * each key to its block text. A text whose first line does not start with
- * `---` has none (an empty map); null is an absent side.
+ * Maps Markdown front matter keys to their block text. A text whose first line
+ * does not start with `---` yields an empty map. A null input is an absent side.
  * @param {string|null} text
  * @returns {{ok: true, blocks: Map<string, string>} | {ok: false}}
  */
