@@ -148,7 +148,9 @@ contract of a consumer-supplied script is recorded in design section 11.1 and
 built only for the first rule the types cannot express. That is the routine's
 rule on named sections of its backlog file; its whole-file line-ending
 rule is a second, smaller gap (a leading byte-order mark is already covered:
-it makes a matched file unreadable, which holds). Open, and decided at that
+it makes a matched file unreadable, which holds; a carriage return outside a
+CRLF and the other line separators make a line-pattern file unreadable, which
+holds too). Open, and decided at that
 consumer's migration: build the contract, or add a fifth type ("named
 sections of one Markdown file stay unchanged"), and whether the line-ending
 rule becomes a type.

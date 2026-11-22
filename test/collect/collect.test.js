@@ -369,3 +369,188 @@ test('collect 9h: a rebase merge is not detected or flagged', async () => {
   const input = await collect(opts({ replay: true }), deps(world));
   assert.ok(!input.limits.some((l) => l.includes('rebase')));
 });
+
+// Content rules (implementation plan 9.4, collector rows C1 to C5).
+const CAP = 1048576;
+const OLD_M = '1'.repeat(40);
+const NEW_M = '2'.repeat(40);
+const OLD_D = '3'.repeat(40);
+const NEW_A = '4'.repeat(40);
+const ZERO = '0'.repeat(40);
+const OTHER = '5'.repeat(40);
+const rawEntry = (meta, path) => `${meta}\0${path}\0`;
+const manifestWithRules = (rules) => JSON.stringify({
+  schema: 1, kit: 'a'.repeat(40), checks: ['check'], codex_clean: 'no_blocking', hold_paths: [],
+  lanes: { runner: { kind: 'queue', base: 'main', auto_merge: true, tier: { default: 'auto', strong_review: [] }, max_changed_lines: null, marker: 'Auto-Merged-By: test-runner' } },
+  content_rules: rules,
+});
+const rulesBlobs = (rules) => {
+  const text = manifestWithRules(rules);
+  return { 'refs/agent-pipeline-kit/4242/trust:.agent-line/manifest.json': text, [`${SHAS.TRUST}:.agent-line/manifest.json`]: text };
+};
+const docsDiff = {
+  diffRaw: [
+    rawEntry(`:100644 100644 ${OLD_M} ${NEW_M} M`, 'docs/m.md'),
+    rawEntry(`:000000 100644 ${ZERO} ${NEW_A} A`, 'docs/a.md'),
+    rawEntry(`:100644 000000 ${OLD_D} ${ZERO} D`, 'docs/d.md'),
+    rawEntry(`:100644 100644 ${OTHER} ${OTHER} M`, 'src/x.go'),
+  ].join(''),
+  numstat: '1\t1\tdocs/m.md\x001\t0\tdocs/a.md\x000\t1\tdocs/d.md\x001\t0\tsrc/x.go\0',
+};
+const lineRules = { hold_on_line_change: [{ glob: 'docs/**', pattern: '^Status:' }] };
+const docsBlobs = { [OLD_M]: 'Status: a\n', [NEW_M]: 'Status: b\n', [OLD_D]: 'Status: d\n', [NEW_A]: 'Status: n\n', [OTHER]: 'code\n' };
+const catFileCalls = (world) => gitCalls(world).filter((c) => c.args[2] === 'cat-file').map((c) => c.args.slice(3));
+const contentReads = (world) => catFileCalls(world).filter((a) => a[0] === '-s' || (a[0] === 'blob' && /^[0-9a-f]{40}$/.test(a[1])));
+const text = (side) => (side.bytes === null ? null : Buffer.from(side.bytes).toString('utf8'));
+
+test('collect content C1: without targets no blob is read for content and contents is empty', async () => {
+  for (const blobs of [{}, rulesBlobs({}), rulesBlobs({ hold_on_add_delete: ['docs/**'] }), rulesBlobs(lineRules)]) {
+    const world = makeWorld({ blobs });
+    const input = await collect(opts(), deps(world));
+    assert.deepEqual(input.contents, {});
+    assert.ok(!catFileCalls(world).some((a) => a[0] === '-s'));
+    // The only blob reads are the head NUL checks that Phase 1 already makes.
+    assert.deepEqual(catFileCalls(world).filter((a) => a[0] === 'blob' && /^[0-9a-f]{40}$/.test(a[1])).map((a) => a[1]), [SHAS.S_NEW, SHAS.S_NEW]);
+  }
+});
+
+test('collect content C2: a target of status M, A and D gets the merge-base and head blobs, absent where missing', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs } });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(Object.keys(input.contents), ['docs/m.md', 'docs/a.md', 'docs/d.md']);
+  const { 'docs/m.md': m, 'docs/a.md': a, 'docs/d.md': d } = input.contents;
+  assert.deepEqual([m.base.state, m.base.size, text(m.base)], ['present', 10, 'Status: a\n']);
+  assert.deepEqual([m.head.state, m.head.size, text(m.head)], ['present', 10, 'Status: b\n']);
+  assert.deepEqual(a.base, { state: 'absent' });
+  assert.deepEqual([a.head.state, text(a.head)], ['present', 'Status: n\n']);
+  assert.deepEqual([d.base.state, text(d.base)], ['present', 'Status: d\n']);
+  assert.deepEqual(d.head, { state: 'absent' });
+  // The size is read first, then the blob; an absent side reads nothing.
+  const reads = contentReads(world).map((a2) => a2.join(' '));
+  for (const sha of [OLD_M, NEW_M, OLD_D, NEW_A]) {
+    assert.ok(reads.indexOf(`-s ${sha}`) !== -1 && reads.lastIndexOf(`blob ${sha}`) > reads.indexOf(`-s ${sha}`), sha);
+  }
+  assert.ok(!reads.some((r) => r.includes(ZERO)));
+  // src/x.go matches no content rule: its blob is read only for the NUL check.
+  assert.ok(!reads.includes(`-s ${OTHER}`));
+  // The core can evaluate the collected input.
+  assert.equal(evaluate(input).reasons.find((r) => r.code === 'rule-line-change').detail, 'docs/m.md: line-changed');
+});
+
+test('collect content C2: the mode and type exclusions of contentTargets apply', async () => {
+  const world = makeWorld({
+    blobs: { ...rulesBlobs(lineRules), [NEW_A]: 'regular file now\n' },
+    diffRaw: [
+      rawEntry(`:100644 100755 ${OLD_M} ${NEW_M} M`, 'docs/exec.md'),
+      rawEntry(`:120000 100644 ${OLD_D} ${NEW_A} T`, 'docs/type.md'),
+      rawEntry(`:000000 120000 ${ZERO} ${OTHER} A`, 'docs/link.md'),
+    ].join(''),
+    numstat: '1\t1\tdocs/exec.md\x001\t1\tdocs/type.md\x001\t0\tdocs/link.md\0',
+  });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(input.contents, {});
+  // Only the head NUL check of the regular-file entry reads a blob, and nothing is sized.
+  assert.deepEqual(contentReads(world), [['blob', NEW_A]]);
+});
+
+test('collect content C3: a blob over the cap is sized, not read, and gives bytes null', async () => {
+  const big = 'x'.repeat(CAP + 1);
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs, [OLD_M]: big } });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(input.contents['docs/m.md'].base, { state: 'present', size: CAP + 1, bytes: null });
+  assert.equal(input.contents['docs/m.md'].head.size, 10);
+  const reads = contentReads(world).map((a) => a.join(' '));
+  assert.ok(reads.includes(`-s ${OLD_M}`));
+  assert.ok(!reads.includes(`blob ${OLD_M}`));
+  assert.equal(evaluate(input).reasons.find((r) => r.code === 'rule-line-change').detail, 'docs/m.md: unreadable');
+});
+
+test('collect content C3: a blob of exactly the cap is read', async () => {
+  const exact = 'x'.repeat(CAP);
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs, [OLD_M]: exact } });
+  const input = await collect(opts(), deps(world));
+  assert.equal(input.contents['docs/m.md'].base.size, CAP);
+  assert.equal(input.contents['docs/m.md'].base.bytes.length, CAP);
+});
+
+test('collect content C3: a size that disagrees with the blob read throws', async () => {
+  const world = makeWorld({
+    ...docsDiff,
+    blobs: { ...rulesBlobs(lineRules), ...docsBlobs },
+    runHook: async (cmd, args) => (cmd === 'git' && args.slice(2, 5).join(' ') === `cat-file -s ${NEW_M}`
+      ? { stdout: Buffer.from('3\n'), stderr: Buffer.alloc(0), code: 0 } : null),
+  });
+  await assert.rejects(collect(opts(), deps(world)), /size/i);
+});
+
+test('collect content C3: an unexpected size output throws', async () => {
+  for (const out of ['', 'abc\n', '-1\n', '1.5\n']) {
+    const world = makeWorld({
+      ...docsDiff,
+      blobs: { ...rulesBlobs(lineRules), ...docsBlobs },
+      runHook: async (cmd, args) => (cmd === 'git' && args.slice(2, 5).join(' ') === `cat-file -s ${OLD_M}`
+        ? { stdout: Buffer.from(out), stderr: Buffer.alloc(0), code: 0 } : null),
+    });
+    await assert.rejects(collect(opts(), deps(world)), /size/i, JSON.stringify(out));
+  }
+});
+
+test('collect content C3: a failing git read of a target blob throws', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs, [OLD_D]: undefined } });
+  await assert.rejects(collect(opts(), deps(world)), /cat-file/);
+});
+
+test('collect content C4: blobs come from the merge base and the head, never the base tip or the working tree', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs } });
+  await collect(opts(), deps(world));
+  const wanted = new Set([OLD_M, NEW_M, OLD_D, NEW_A]);
+  const objects = contentReads(world).map((a) => a[1]);
+  assert.ok(objects.length > 0);
+  for (const object of objects) assert.ok(wanted.has(object) || object === OTHER || object === SHAS.S_NEW, object);
+  for (const sha of wanted) assert.ok(objects.includes(sha), sha);
+  // No read names the base tip, a ref of the pull request or a path.
+  for (const call of catFileCalls(world).filter((a) => !a[1].includes('.agent-line/'))) {
+    for (const arg of call.slice(1)) {
+      assert.ok(!arg.includes(SHAS.BASE) && !arg.includes('/base') && !arg.includes('/head') && !arg.includes('docs/'), arg);
+    }
+  }
+  // The working tree is never read: the default readFile throws.
+});
+
+test('collect content C4: the diff objects are the merge-base side and the head side of the diff that was taken', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(lineRules), ...docsBlobs } });
+  await collect(opts(), deps(world));
+  const diff = gitCalls(world).find((c) => c.args[2] === 'diff' && c.args.includes('--raw'));
+  assert.deepEqual(diff.args.slice(-3), [SHAS.MB, SHAS.HEAD, '--']);
+});
+
+test('collect content C5: replay reads the same objects as live', async () => {
+  const blobs = { ...rulesBlobs(lineRules), ...docsBlobs };
+  const live = makeWorld({ ...docsDiff, blobs });
+  const liveInput = await collect(opts(), deps(live));
+  const replayed = makeWorld({ ...docsDiff, blobs, pr: mergedPr() });
+  const replayInput = await collect(opts({ replay: true }), deps(replayed));
+  const names = (world) => contentReads(world).map((a) => a.join(' ')).sort();
+  assert.deepEqual(names(replayed), names(live));
+  assert.deepEqual(replayInput.contents, liveInput.contents);
+  assert.equal(evaluate(replayInput).reasons.find((r) => r.code === 'rule-line-change').detail, 'docs/m.md: line-changed');
+});
+
+test('collect content: a path named __proto__ is an ordinary key of contents', async () => {
+  const world = makeWorld({
+    blobs: { ...rulesBlobs({ hold_on_line_change: [{ glob: '**', pattern: 'x' }] }), [OLD_M]: 'x\n', [NEW_M]: 'y\n' },
+    diffRaw: rawEntry(`:100644 100644 ${OLD_M} ${NEW_M} M`, '__proto__'),
+    numstat: '1\t1\t__proto__\0',
+  });
+  const input = await collect(opts(), deps(world));
+  assert.equal(Object.getPrototypeOf(input.contents), Object.prototype);
+  assert.deepEqual(Object.keys(input.contents), ['__proto__']);
+  assert.equal(Object.hasOwn(input.contents, '__proto__'), true);
+});
+
+test('collect content: an invalid manifest collects no contents', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...docsBlobs, 'refs/agent-pipeline-kit/4242/trust:.agent-line/manifest.json': '{ nope' } });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(input.contents, {});
+  assert.equal(evaluate(input).verdict, 'blocked:manifest');
+});

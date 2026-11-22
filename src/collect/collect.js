@@ -1,7 +1,8 @@
 // The input collector (implementation plan section 4): reads GitHub REST and
 // git objects and builds a GateInput. It holds no decisions, never checks out
 // and never executes pull request code.
-import { HALT_LABEL, QUEUE_BRANCH, QUEUE_DIR } from '../core/constants.js';
+import { CONTENT_MAX_BYTES, HALT_LABEL, QUEUE_BRANCH, QUEUE_DIR } from '../core/constants.js';
+import { contentTargets } from '../core/content.js';
 import { parseManifest } from '../core/manifest.js';
 import { isRefName, makeGit } from './git.js';
 import { makeGithub } from './github.js';
@@ -50,6 +51,17 @@ const pullOf = (pull, closedAt) => ({
   createdAt: pull.created_at,
   closedAt,
 });
+
+// One side of a content target: its size, and its bytes unless the size is over
+// the cap (then the blob is not read). Throws when git disagrees with itself.
+async function readContent(git, sha) {
+  need(SHA.test(sha), 'git returned an invalid blob SHA');
+  const size = await git.blobSize(sha);
+  if (size > CONTENT_MAX_BYTES) return { state: 'present', size, bytes: null };
+  const bytes = await git.blob(sha);
+  need(bytes.length === size, 'a blob differs from its size');
+  return { state: 'present', size, bytes };
+}
 
 async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile, refs, state }) {
   const limits = [];
@@ -133,6 +145,25 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
     });
   }
 
+  // 6b. Contents for the content rules: the merge-base and head blobs of the
+  // paths that contentTargets names, by the object ids of the diff itself. A
+  // path is defined as an own property, so that a file named `__proto__` is
+  // an ordinary key.
+  const contents = {};
+  const parsedManifest = parseManifest(manifestText);
+  if (parsedManifest.ok) {
+    const targets = new Set(contentTargets(parsedManifest.manifest, files));
+    for (let i = 0; i < files.length; i += 1) {
+      if (!targets.has(files[i].path)) continue;
+      const { status } = files[i];
+      const value = {
+        base: status === 'A' ? { state: 'absent' } : await readContent(git, raw[i].srcSha),
+        head: status === 'D' ? { state: 'absent' } : await readContent(git, raw[i].dstSha),
+      };
+      Object.defineProperty(contents, files[i].path, { value, enumerable: true, writable: true, configurable: true });
+    }
+  }
+
   // 7. Queue item at the base tip.
   const input = {};
   const queue = QUEUE_BRANCH.exec(headRef);
@@ -202,6 +233,7 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
       mergeable: replay ? null : (typeof data.mergeable === 'boolean' ? data.mergeable : null),
     },
     files,
+    contents,
     baseSha,
     baseIsAncestor,
     ...input,

@@ -1,6 +1,7 @@
 // Manifest, schema version 1 (design section 6). Any invalid manifest is
 // `blocked:manifest`. Unknown keys are invalid at every level.
 import { validatePattern } from './glob.js';
+import { validateLinePattern } from './content.js';
 
 const BRANCH = /^[A-Za-z0-9._/-]+$/;
 const LANE_NAME = /^[a-z][a-z0-9-]*$/;
@@ -33,6 +34,55 @@ function checkPatterns(value, where, errors) {
   for (const pattern of value) {
     const error = validatePattern(pattern);
     if (error !== null) errors.push(`${where}: ${error}`);
+  }
+}
+
+// An array of `{glob, <field>}` entries; `field` is checked by `checkField`.
+function checkRuleEntries(value, where, field, checkField, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${where}: must be an array`);
+    return;
+  }
+  value.forEach((entry, index) => {
+    const at = `${where}[${index}]`;
+    if (!isObject(entry)) {
+      errors.push(`${at}: must be an object`);
+      return;
+    }
+    checkKeys(entry, ['glob', field], [], at, errors);
+    if (Object.hasOwn(entry, 'glob')) {
+      const error = validatePattern(entry.glob);
+      if (error !== null) errors.push(`${at}.glob: ${error}`);
+    }
+    if (Object.hasOwn(entry, field)) checkField(entry[field], `${at}.${field}`, errors);
+  });
+}
+
+function checkLinePattern(value, where, errors) {
+  const error = validateLinePattern(value);
+  if (error !== null) errors.push(`${where}: ${error}`);
+}
+
+function checkKeyNames(value, where, errors) {
+  const ok = Array.isArray(value) && value.length > 0 && value.every((k) => typeof k === 'string' && k !== '') &&
+    new Set(value).size === value.length;
+  if (!ok) errors.push(`${where}: must be a non-empty array of distinct non-empty strings`);
+}
+
+// Content rules (design 5.4.1 and 6). They only add holds.
+function checkContentRules(rules, errors) {
+  if (!isObject(rules)) {
+    errors.push('content_rules: must be an object');
+    return;
+  }
+  checkKeys(rules, [], ['hold_on_add_delete', 'hold_on_line_change', 'keys_only', 'front_matter_only'], 'content_rules', errors);
+  if (Object.hasOwn(rules, 'hold_on_add_delete')) checkPatterns(rules.hold_on_add_delete, 'content_rules.hold_on_add_delete', errors);
+  if (Object.hasOwn(rules, 'hold_on_line_change')) {
+    checkRuleEntries(rules.hold_on_line_change, 'content_rules.hold_on_line_change', 'pattern', checkLinePattern, errors);
+  }
+  if (Object.hasOwn(rules, 'keys_only')) checkRuleEntries(rules.keys_only, 'content_rules.keys_only', 'keys', checkKeyNames, errors);
+  if (Object.hasOwn(rules, 'front_matter_only')) {
+    checkRuleEntries(rules.front_matter_only, 'content_rules.front_matter_only', 'keys', checkKeyNames, errors);
   }
 }
 
@@ -119,7 +169,7 @@ export function parseManifest(text) {
   if (!isObject(manifest)) {
     return { ok: false, code: 'manifest-invalid', errors: ['the manifest must be a JSON object'] };
   }
-  checkKeys(manifest, ['schema', 'kit', 'checks', 'codex_clean', 'hold_paths', 'lanes'], [], 'manifest', errors);
+  checkKeys(manifest, ['schema', 'kit', 'checks', 'codex_clean', 'hold_paths', 'lanes'], ['content_rules'], 'manifest', errors);
   if (Object.hasOwn(manifest, 'schema') && manifest.schema !== 1) errors.push('schema: must be 1');
   if (Object.hasOwn(manifest, 'kit') && !(typeof manifest.kit === 'string' && /^[0-9a-f]{40}$/.test(manifest.kit))) {
     errors.push('kit: must be 40 lowercase hex characters');
@@ -134,6 +184,7 @@ export function parseManifest(text) {
     errors.push('codex_clean: must be "no_blocking" or "no_findings"');
   }
   if (Object.hasOwn(manifest, 'hold_paths')) checkPatterns(manifest.hold_paths, 'hold_paths', errors);
+  if (Object.hasOwn(manifest, 'content_rules')) checkContentRules(manifest.content_rules, errors);
   if (Object.hasOwn(manifest, 'lanes')) {
     const lanes = manifest.lanes;
     if (!isObject(lanes) || Object.keys(lanes).length === 0) {

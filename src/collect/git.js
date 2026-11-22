@@ -52,6 +52,12 @@ export function makeGit(run, repoDir) {
     async blob(objectSha) {
       return (await ok(['cat-file', 'blob', objectSha])).stdout;
     },
+    // The size in bytes of a blob, without reading it.
+    async blobSize(objectSha) {
+      const out = text(await ok(['cat-file', '-s', objectSha]));
+      if (!/^\d+$/.test(out) || !Number.isSafeInteger(Number(out))) throw new Error('git cat-file -s returned an unexpected size');
+      return Number(out);
+    },
     // The file at `<rev>:<path>` as UTF-8 text, or null when it does not exist.
     async textAt(rev, path) {
       const spec = `${rev}:${path}`;
