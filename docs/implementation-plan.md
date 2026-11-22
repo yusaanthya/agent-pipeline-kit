@@ -216,7 +216,7 @@ broken by the greatest `id`.
 ### 3.2 `readMergeField`
 
 The first line must be exactly `---`; front matter ends at the next line that
-is exactly `---`. A `\r` or a line separator (U+000B, U+000C, U+0085, U+2028, U+2029) anywhere in the front matter, no closing line, or more
+is exactly `---`. A `\r` anywhere in the front matter, no closing line, or more
 than one line starting with `merge:` gives `{ ok: false }`. A line matching
 `^merge:[ \t]*(\S+)[ \t]*$` gives its value: `runner` or `owner`; any other
 value gives `{ ok: false }`. No `merge:` line gives `{ ok: true, value: null }`.
