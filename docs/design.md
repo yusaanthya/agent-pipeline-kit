@@ -372,14 +372,15 @@ Common semantics, which apply to all four types:
   for one entry in the order of the types as listed below, and within a type
   in the order of the rules in the manifest array. The per-pull-request
   `too-large` reason follows all entries.
-- **Lines.** Lines are split at `\n`, one `\r` immediately before each `\n`
-  is dropped, a final line without a newline counts, and an empty file has no
+- **Lines.** Lines are split at `\n` and one trailing `\r` is removed from
+  each line. A final line without a newline counts and an empty file has no
   lines.
 
 `hold_on_line_change` treats a bare `\r`, U+000B, U+000C, U+0085, U+2028 or
 U+2029 as unreadable, `keys_only` treats JSON deeper than 512 containers as
-unreadable, and `front_matter_only` treats those separators in front matter
-or a `---` delimiter on its own after leading whitespace as malformed.
+unreadable, and `front_matter_only` treats any of those Unicode separators
+or any `\r` (including in CRLF) in front matter, or a `---` delimiter on its
+own after leading whitespace, as malformed.
 
 **Type 1, `hold_on_add_delete`: array of globs.** An entry with status `A` or
 `D` whose path matches holds. Status `M` does not. Reason `rule-add-delete`,

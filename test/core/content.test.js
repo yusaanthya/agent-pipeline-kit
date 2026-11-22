@@ -663,8 +663,10 @@ run('hold_on_line_change evaluates CRLF lines', LC, doc, 'Status: a\r\n', 'Statu
 run('keys_only reads a Unicode line separator inside a JSON string', KO, cfg,
   '{"x":"a"}', '{"x":"a\u2028b","version":2}', [hold('rule-keys', 'tools/a/config.json', 'key-changed')]);
 
-run('front_matter_only rejects whitespace before the opener', FM, addedFile('docs/guides/a.md'),
-  undefined, `\f${base0}`, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
+run('front_matter_only rejects a blank line before the opener', FM, addedFile('docs/guides/a.md'),
+  undefined, `\n${base0}`, [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
+run('front_matter_only permits a Markdown thematic break after text', FM, guide,
+  'Introduction\n', 'Introduction\n\n---\n\nNext section\n', []);
 run('front_matter_only rejects a line separator hiding a key inside a value', FM, guide,
   base0, base0.replace('description:', 'description: x\u2028tools: all '),
   [hold('rule-front-matter', 'docs/guides/a.md', 'front-matter-invalid')]);
