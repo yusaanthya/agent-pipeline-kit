@@ -164,3 +164,41 @@ test('agreement / the same change set through check-paths and evaluate / the sam
   }
   assert.deepEqual([...seen].sort(), ['blocked:input', 'clear', 'hold:owner']);
 });
+
+// The sections_only rule, through the content blobs the collector fetches.
+const sectionsManifest = JSON.stringify({
+  ...JSON.parse(manifest),
+  content_rules: { sections_only: [{ glob: 'docs/backlog.md', sections: ['## Ready'] }] },
+});
+const sectionsWorld = (paths, blobs) => ({ ...world(paths, blobs), blobs: { [trustManifestKey]: sectionsManifest, ...blobs } });
+const backlogOld = 'Intro\n\n## Ready\nr1\n\n## Decisions\nd1\n';
+
+test('sections_only / only the body of a listed section changes / clear', async () => {
+  const blobs = { [SHAS.S_OLD]: backlogOld, [SHAS.S_NEW]: backlogOld.replace('r1', 'r2') };
+  const { code, result } = await checkPaths(sectionsWorld(['docs/backlog.md'], blobs), ['--lane', 'nightly']);
+  assert.equal(result.result, 'clear');
+  assert.equal(code, 0);
+  assert.deepEqual(result.reasons, []);
+});
+
+test('sections_only / the body of an unlisted section changes / hold:owner naming the rule and the path', async () => {
+  const blobs = { [SHAS.S_OLD]: backlogOld, [SHAS.S_NEW]: backlogOld.replace('d1', 'd2') };
+  const { code, result } = await checkPaths(sectionsWorld(['docs/backlog.md'], blobs), ['--lane', 'nightly']);
+  assert.equal(result.result, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(result.reasons.map((r) => [r.code, r.detail]), [['rule-sections', 'docs/backlog.md: section-changed']]);
+});
+
+test('sections_only / a carriage return in the head / hold:owner as unreadable', async () => {
+  const blobs = { [SHAS.S_OLD]: backlogOld, [SHAS.S_NEW]: backlogOld.replace('r1', 'r2\r') };
+  const { code, result } = await checkPaths(sectionsWorld(['docs/backlog.md'], blobs), ['--lane', 'nightly']);
+  assert.equal(result.result, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(result.reasons.map((r) => [r.code, r.detail]), [['rule-sections', 'docs/backlog.md: unreadable']]);
+});
+
+test('sections_only / a path the rule does not match / no blob is needed and the result is clear', async () => {
+  const { code, result } = await checkPaths(sectionsWorld(['docs/other.md'], {}), ['--lane', 'nightly']);
+  assert.equal(result.result, 'clear');
+  assert.equal(code, 0);
+});

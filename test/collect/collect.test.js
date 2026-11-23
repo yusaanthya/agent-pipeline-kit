@@ -554,3 +554,40 @@ test('collect content: an invalid manifest collects no contents', async () => {
   assert.deepEqual(input.contents, {});
   assert.equal(evaluate(input).verdict, 'blocked:manifest');
 });
+
+const sectionRules = { sections_only: [{ glob: 'docs/**', sections: ['## Ready'] }] };
+const sectionBlobs = {
+  [OLD_M]: 'Intro\n## Ready\nr1\n## Decisions\nd1\n', [NEW_M]: 'Intro\n## Ready\nr2\n## Decisions\nd2\n',
+  [OLD_D]: '## Ready\nr1\n', [NEW_A]: '## Ready\nr1\n', [OTHER]: 'code\n',
+};
+
+test('collect content C2: a sections_only target of status M, A and D gets the merge-base and head blobs', async () => {
+  const world = makeWorld({ ...docsDiff, blobs: { ...rulesBlobs(sectionRules), ...sectionBlobs } });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(Object.keys(input.contents), ['docs/m.md', 'docs/a.md', 'docs/d.md']);
+  const { 'docs/m.md': m, 'docs/a.md': a, 'docs/d.md': d } = input.contents;
+  assert.deepEqual([m.base.state, text(m.base)], ['present', sectionBlobs[OLD_M]]);
+  assert.deepEqual([m.head.state, text(m.head)], ['present', sectionBlobs[NEW_M]]);
+  assert.deepEqual(a.base, { state: 'absent' });
+  assert.deepEqual(d.head, { state: 'absent' });
+  const reads = contentReads(world).map((a2) => a2.join(' '));
+  for (const sha of [OLD_M, NEW_M, OLD_D, NEW_A]) {
+    assert.ok(reads.indexOf(`-s ${sha}`) !== -1 && reads.lastIndexOf(`blob ${sha}`) > reads.indexOf(`-s ${sha}`), sha);
+  }
+  assert.ok(!reads.includes(`-s ${OTHER}`));
+  // The core evaluates the collected input: the unlisted body changed, a file was added, a file was deleted.
+  assert.deepEqual(evaluate(input).reasons.filter((r) => r.code === 'rule-sections').map((r) => r.detail), [
+    'docs/m.md: section-changed', 'docs/a.md: added', 'docs/d.md: deleted',
+  ]);
+});
+
+test('collect content C2: a sections_only change inside a listed body collects the blobs and gives no hold', async () => {
+  const world = makeWorld({
+    blobs: { ...rulesBlobs(sectionRules), [OLD_M]: '## Ready\nr1\n', [NEW_M]: '## Ready\nr2\n' },
+    diffRaw: rawEntry(`:100644 100644 ${OLD_M} ${NEW_M} M`, 'docs/m.md'),
+    numstat: '1\t1\tdocs/m.md\0',
+  });
+  const input = await collect(opts(), deps(world));
+  assert.deepEqual(Object.keys(input.contents), ['docs/m.md']);
+  assert.ok(!evaluate(input).reasons.some((r) => r.code === 'rule-sections' || r.code === 'content-missing'));
+});
