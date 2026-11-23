@@ -358,6 +358,25 @@ function blocksChanged(base, head, named) {
   return false;
 }
 
+// Type 5: the text of each side without the bodies of the named sections must
+// be the same, and so must whether it ends with a newline. A heading line is
+// any line that starts with "## ", wherever it is. Text before the first
+// heading belongs to no section.
+function withoutBodies(text, named) {
+  const kept = [];
+  let listed = false;
+  for (const line of text.split('\n')) {
+    const heading = line.startsWith('## ');
+    if (heading) listed = named.includes(line);
+    if (heading || !listed) kept.push(line);
+  }
+  return kept.join('\n');
+}
+
+function sectionsChanged(base, head, named) {
+  return base.endsWith('\n') !== head.endsWith('\n') || withoutBodies(base, named) !== withoutBodies(head, named);
+}
+
 function entryReasons(rules, f, contents) {
   const reasons = [];
   if (!isTarget(f)) return reasons;
@@ -373,7 +392,8 @@ function entryReasons(rules, f, contents) {
   const lineRules = hits(rules.hold_on_line_change);
   const keyRules = hits(rules.keys_only);
   const frontRules = hits(rules.front_matter_only);
-  if (lineRules.length + keyRules.length + frontRules.length === 0) return reasons;
+  const sectionRules = hits(rules.sections_only);
+  if (lineRules.length + keyRules.length + frontRules.length + sectionRules.length === 0) return reasons;
   const sides = readSides(f, contents);
   if (sides === null) {
     reasons.push(missing(f));
@@ -406,6 +426,15 @@ function entryReasons(rules, f, contents) {
     if (!fronts[0].ok || !fronts[1].ok) reasons.push(hold(f, 'rule-front-matter', 'front-matter-invalid'));
     else if (blocksChanged(fronts[0].blocks, fronts[1].blocks, rule.keys)) reasons.push(hold(f, 'rule-front-matter', 'front-matter-changed'));
   }
+
+  for (const rule of sectionRules) {
+    // As for keys_only, the status comes first.
+    if (f.status === 'A') { reasons.push(hold(f, 'rule-sections', 'added')); continue; }
+    if (f.status === 'D') { reasons.push(hold(f, 'rule-sections', 'deleted')); continue; }
+    // A carriage return would let a reader see a line this comparison does not.
+    if (unreadable || sides.base.text.includes('\r') || sides.head.text.includes('\r')) reasons.push(hold(f, 'rule-sections', 'unreadable'));
+    else if (sectionsChanged(sides.base.text, sides.head.text, rule.sections)) reasons.push(hold(f, 'rule-sections', 'section-changed'));
+  }
   return reasons;
 }
 
@@ -426,7 +455,7 @@ export function evaluateContentRules(manifest, files, contents) {
 
 /**
  * The paths whose blobs the collector must read: entries that match a glob of
- * `hold_on_line_change`, `keys_only` or `front_matter_only` and are content
+ * `hold_on_line_change`, `keys_only`, `front_matter_only` or `sections_only` and are content
  * targets. In diff order, each path once.
  * @param {object} manifest a validated manifest
  * @param {object[]} files FileChange entries
@@ -434,7 +463,7 @@ export function evaluateContentRules(manifest, files, contents) {
  */
 export function contentTargets(manifest, files) {
   const rules = manifest.content_rules ?? {};
-  const globs = [...(rules.hold_on_line_change ?? []), ...(rules.keys_only ?? []), ...(rules.front_matter_only ?? [])].map((rule) => rule.glob);
+  const globs = [...(rules.hold_on_line_change ?? []), ...(rules.keys_only ?? []), ...(rules.front_matter_only ?? []), ...(rules.sections_only ?? [])].map((rule) => rule.glob);
   const paths = [];
   for (const f of files) {
     if (isTarget(f) && globs.some((glob) => matches(glob, f.path)) && !paths.includes(f.path)) paths.push(f.path);

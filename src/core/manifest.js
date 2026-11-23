@@ -69,13 +69,19 @@ function checkKeyNames(value, where, errors) {
   if (!ok) errors.push(`${where}: must be a non-empty array of distinct non-empty strings`);
 }
 
+function checkHeadings(value, where, errors) {
+  const ok = Array.isArray(value) && value.length > 0 && new Set(value).size === value.length &&
+    value.every((h) => typeof h === 'string' && h.startsWith('## ') && !/[\r\n]/.test(h));
+  if (!ok) errors.push(`${where}: must be a non-empty array of distinct heading lines, each starting with "## "`);
+}
+
 // Content rules. They only add holds.
 function checkContentRules(rules, errors) {
   if (!isObject(rules)) {
     errors.push('content_rules: must be an object');
     return;
   }
-  checkKeys(rules, [], ['hold_on_add_delete', 'hold_on_line_change', 'keys_only', 'front_matter_only'], 'content_rules', errors);
+  checkKeys(rules, [], ['hold_on_add_delete', 'hold_on_line_change', 'keys_only', 'front_matter_only', 'sections_only'], 'content_rules', errors);
   if (Object.hasOwn(rules, 'hold_on_add_delete')) checkPatterns(rules.hold_on_add_delete, 'content_rules.hold_on_add_delete', errors);
   if (Object.hasOwn(rules, 'hold_on_line_change')) {
     checkRuleEntries(rules.hold_on_line_change, 'content_rules.hold_on_line_change', 'pattern', checkLinePattern, errors);
@@ -83,6 +89,9 @@ function checkContentRules(rules, errors) {
   if (Object.hasOwn(rules, 'keys_only')) checkRuleEntries(rules.keys_only, 'content_rules.keys_only', 'keys', checkKeyNames, errors);
   if (Object.hasOwn(rules, 'front_matter_only')) {
     checkRuleEntries(rules.front_matter_only, 'content_rules.front_matter_only', 'keys', checkKeyNames, errors);
+  }
+  if (Object.hasOwn(rules, 'sections_only')) {
+    checkRuleEntries(rules.sections_only, 'content_rules.sections_only', 'sections', checkHeadings, errors);
   }
 }
 
