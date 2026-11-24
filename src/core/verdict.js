@@ -260,7 +260,9 @@ export function evaluate(input) {
       laneName = hits[0];
       const message = input.titleLane.commitMessage;
       const lines = typeof message === 'string' ? message.split('\n').map((l) => l.replace(/\r$/, '')) : [];
-      if (!lines.includes(manifest.lanes[laneName].marker)) laneReasons.push(['hold:owner', 'lane-marker-mismatch', laneName]);
+      // Replay needs exactly one caller lane marker, so a second one is ambiguous.
+      const markers = laneNames.filter((name) => manifest.lanes[name].kind === 'caller' && lines.includes(manifest.lanes[name].marker));
+      if (markers.length !== 1 || markers[0] !== laneName) laneReasons.push(['hold:owner', 'lane-marker-mismatch', laneName]);
     }
   } else if (replay && typeof input.mergeMessage === 'string') {
     // Replay has no caller: the merge commit's marker line names the lane. A

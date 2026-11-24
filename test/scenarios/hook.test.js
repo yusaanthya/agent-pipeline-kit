@@ -89,6 +89,12 @@ test('hook: title has a caller lane prefix / the call carries another lane marke
   assert.match(err.join('\n'), /hold:owner \(lane-marker-mismatch/);
 });
 
+test('hook: title has a caller lane prefix / the call carries both caller lane markers / hold lane-marker-mismatch', async () => {
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly\nAuto-Merged-By: test-weekly'), callerWorld('chore(nightly): tidy'));
+  assert.equal(code, 2);
+  assert.match(err.join('\n'), /hold:owner \(lane-marker-mismatch/);
+});
+
 test('hook: title has a caller lane prefix / the call carries no marker / hold lane-marker-mismatch', async () => {
   for (const message of ['Tidy.', undefined]) {
     const { code, err } = await hook(nightlyCall(message), callerWorld('chore(nightly): tidy'));
