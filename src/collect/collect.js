@@ -17,19 +17,19 @@ function need(condition, message) {
 }
 
 /**
- * @param {{repo: string, prNumber: number, repoDir: string, callerLane?: string|null, replay?: boolean, manifestFile?: string|null}} options
+ * @param {{repo: string, prNumber: number, repoDir: string, callerLane?: string|null, titleLane?: {commitMessage: string|null}|null, replay?: boolean, manifestFile?: string|null}} options
  * @param {{run: Function, readFile: (path: string) => Promise<string>, pid?: number}} deps
  * @returns {Promise<import('../core/verdict.js').GateInput>} throws on any failed or unexpected API or git result
  */
 export async function collect(options, deps) {
-  const { repo, prNumber, repoDir, callerLane = null, replay = false, manifestFile = null } = options;
+  const { repo, prNumber, repoDir, callerLane = null, titleLane = null, replay = false, manifestFile = null } = options;
   need(typeof repo === 'string' && REPO.test(repo) && !repo.split('/').some((part) => part === '.' || part === '..'), 'invalid repository name');
   need(Number.isSafeInteger(prNumber) && prNumber > 0, 'invalid pull request number');
   need(typeof repoDir === 'string' && repoDir !== '' && !repoDir.includes('\0'), 'invalid repository directory');
   need(callerLane === null || (typeof callerLane === 'string' && LANE_NAME.test(callerLane)), 'invalid lane name');
 
   const gh = makeGithub(deps.run);
-  return withRefs(deps, repoDir, (git, refs, state) => gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile: deps.readFile, refs, state }));
+  return withRefs(deps, repoDir, (git, refs, state) => gather({ repo, prNumber, callerLane, titleLane, replay, manifestFile }, { gh, git, readFile: deps.readFile, refs, state }));
 }
 
 // Runs `fn` with the private ref names and deletes the refs it fetched afterwards.
@@ -114,7 +114,7 @@ async function readChanges(git, mergeBase, headSha, manifestText) {
   return { files, contents };
 }
 
-async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh, git, readFile, refs, state }) {
+async function gather({ repo, prNumber, callerLane, titleLane, replay, manifestFile }, { gh, git, readFile, refs, state }) {
   const limits = [];
 
   // 1. Repository and pull request.
@@ -230,6 +230,7 @@ async function gather({ repo, prNumber, callerLane, replay, manifestFile }, { gh
     repo,
     manifestText,
     callerLane,
+    titleLane,
     asOf,
     pr: {
       number: prNumber,

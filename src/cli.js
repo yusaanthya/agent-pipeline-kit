@@ -228,7 +228,7 @@ async function runHook(opts, io) {
     const t = call.tool_input;
     const repo = typeof t?.owner === 'string' && typeof t?.repo === 'string' ? `${t.owner}/${t.repo}` : '';
     if (!isRepo(repo)) return blockMerge(io, 'malformed tool input');
-    const { result } = await gate({ repo, prNumber: t.pullNumber, repoDir: opts['repo-dir'], callerLane: null, replay: false, manifestFile: null }, io);
+    const { result } = await gate({ repo, prNumber: t.pullNumber, repoDir: opts['repo-dir'], callerLane: null, titleLane: { commitMessage: t.commit_message }, replay: false, manifestFile: null }, io);
     if (result.verdict !== 'merge') {
       const first = result.reasons[0];
       return blockMerge(io, `verdict ${result.verdict}${first ? ` (${first.code}${first.detail === undefined ? '' : `: ${first.detail}`})` : ''}`);

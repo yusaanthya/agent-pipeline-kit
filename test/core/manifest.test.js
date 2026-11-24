@@ -332,3 +332,34 @@ for (const [name, rules] of badSections) {
 test('S4 sections that differ only by case are distinct headings', () => {
   assert.equal(parse(withRules({ sections_only: [{ glob: 'a', sections: ['## Ready', '## ready'] }] })).ok, true);
 });
+
+const withPrefixes = (a, b) => {
+  const m = valid();
+  m.lanes.second = { ...m.lanes.nightly, marker: 'Auto-Merged-By: test-second', title_prefix: b };
+  m.lanes.nightly.title_prefix = a;
+  return m;
+};
+const parseObject = (m) => parseManifest(JSON.stringify(m));
+
+test('title_prefix on caller lanes with unrelated prefixes is accepted', () => {
+  assert.equal(parseObject(withPrefixes('chore(a): ', 'chore(b): ')).ok, true);
+});
+
+test('title_prefix that is empty, multi-line, not a string or on a queue lane is rejected', () => {
+  for (const value of ['', 'a\nb', 'a\rb', 3]) {
+    const m = valid();
+    m.lanes.nightly.title_prefix = value;
+    assert.equal(parseObject(m).ok, false, JSON.stringify(value));
+  }
+  const m = valid();
+  m.lanes.runner.title_prefix = 'x: ';
+  assert.equal(parseObject(m).ok, false);
+});
+
+test('title_prefix values where one starts with the other, or are equal, are rejected', () => {
+  for (const [a, b] of [['chore: ', 'chore: ni'], ['chore: ni', 'chore: '], ['chore: ', 'chore: ']]) {
+    const result = parseObject(withPrefixes(a, b));
+    assert.equal(result.ok, false, `${a} / ${b}`);
+    assert.match(result.errors.join('\n'), /overlap/);
+  }
+});

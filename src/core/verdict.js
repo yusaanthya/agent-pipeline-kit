@@ -16,6 +16,7 @@ import { readCodexState, codexReason } from './codex.js';
  * @property {string} repo                 'owner/name'; compared case-insensitively
  * @property {string|null} manifestText    raw manifest text; null if the file does not exist
  * @property {string|null} callerLane      lane passed by a procedure call; null otherwise
+ * @property {{commitMessage: string|null}|null} [titleLane]  hook only: select the caller lane by title prefix; commitMessage is the merge call's message
  * @property {string|null} asOf            ISO 8601 UTC merge time for replay; null for live
  * @property {PullFacts} pr
  * @property {FileChange[]} files          merge-base..head, from git
@@ -248,6 +249,20 @@ export function evaluate(input) {
     } else {
       laneReasons.push(['blocked:lane', 'unknown-lane', String(input.callerLane)]);
       laneBlocked = true;
+    }
+  } else if (input.titleLane && queueMatch === null && typeof pr.title === 'string') {
+    // Hook: the title only selects among the manifest's own caller lanes.
+    const hits = laneNames.filter((name) => {
+      const prefix = manifest.lanes[name].title_prefix;
+      return manifest.lanes[name].kind === 'caller' && typeof prefix === 'string' && pr.title.startsWith(prefix);
+    });
+    if (hits.length === 1) {
+      laneName = hits[0];
+      const message = input.titleLane.commitMessage;
+      const lines = typeof message === 'string' ? message.split('\n').map((l) => l.replace(/\r$/, '')) : [];
+      // Replay needs exactly one caller lane marker, so a second one is ambiguous.
+      const markers = laneNames.filter((name) => manifest.lanes[name].kind === 'caller' && lines.includes(manifest.lanes[name].marker));
+      if (markers.length !== 1 || markers[0] !== laneName) laneReasons.push(['hold:owner', 'lane-marker-mismatch', laneName]);
     }
   } else if (replay && typeof input.mergeMessage === 'string') {
     // Replay has no caller: the merge commit's marker line names the lane. A
