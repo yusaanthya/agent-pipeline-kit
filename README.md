@@ -182,19 +182,22 @@ State at this commit. The gate is a guardrail against honest agent mistakes: an 
 - GitHub data (pull request state, check runs, comments, reviews, labels) is read through `gh` and git objects. Check runs count only from the GitHub Actions app. Codex review counts only from the trusted bot, bound to the exact head SHA.
 - The title, body, commit messages and review comments are agent-writable. The gate reads the title only for the owner markers `[FAILED]` and `[NEEDS-DECISION]` and, in the hook, to select a caller lane by `title_prefix`. It reads the commit message only for the marker line. Agent-writable text is never executed or used to widen a decision.
 
+**Prompt injection.** Text from issues, pull requests, reviews and comments can steer an agent. The gate never reads such text as policy: it reads only the owner markers in the title, the title prefix to choose among the consumer's own lanes, and the marker line. It holds by default, so an injected agent can at most get a diff merged that the selected lane's allowlist and checks allow.
+
 **Floor.** Paths such as workflow files, agent configuration, dependency manifests, git hooks and the pipeline's own files always hold for the owner, whatever the manifest says. The manifest adds holds and allowlists; it cannot remove a floor path. Symlinks, submodules, executables, type changes and binary files hold.
 
 **Content rules.** `hold_on_add_delete`, `hold_on_line_change`, `keys_only`, `front_matter_only` and `sections_only` only add holds. An unreadable or oversized file holds. For `sections_only`, a heading is a line that starts with `## `, so changes outside the listed sections hold.
 
 **`check-paths`.** It evaluates the change-set conditions for a commit with no pull request, so a runner can check its own commit before pushing. It never returns `merge`.
 
-**PreToolUse hook.** It blocks a merge tool call unless the gate says `merge` and the call matches the verdict (head SHA, method, marker line). It fails closed: with `"onFailure": "block"` on every gate hook entry, a crash or a missing kit also blocks. The hook does not read environment variables to decide; it applies wherever the settings that register it are loaded, and the Phase 0 probe showed the settings of the checked-out branch apply. A merge made through `gh api`, another HTTP client or a tool the matcher does not name does not pass the hook, so the settings deny list closes auto-merge, file writes and `gh pr merge`, and `gh api` merges stay uncovered. An agent that can write files can change the hook settings.
+**PreToolUse hook.** It blocks a merge tool call unless the gate says `merge` and the call matches the verdict (head SHA, method, marker line). It fails closed: with `"onFailure": "block"` on every gate hook entry, a crash or a missing kit also blocks. The kit does not read environment variables. A consumer may gate the hook command in its settings on an environment variable so that only unattended sessions are gated; where that variable is missing the hook does not run, so it fails open. The Phase 0 probe showed the settings of the checked-out branch apply. A merge made through `gh api`, another HTTP client or a tool the matcher does not name does not pass the hook. The example settings deny auto-merge, direct file writes and `gh pr merge`. A consumer may keep `gh pr merge` allowed, for example because its owner's local review loop merges with it and the command cannot run in cloud sessions, and then that command, like `gh api`, does not pass the hook. An agent that can write files can change the hook settings.
 
 **Caller-lane selection by title prefix.** The hook picks the caller lane from the title and requires that lane's marker in the merge call. An agent can change the title, so the title only selects among the consumer's own lanes. Each lane's allowlist and conditions still apply to the diff, and consumers keep caller-lane allowlists disjoint.
 
 **Accepted residuals.** None is closed by the kit.
 
 - A merge or push that does not pass the hook, including `gh api`, and a changed hook or manifest by someone who can write to the repository.
+- A hook command gated on an environment variable does not run where the variable is missing, so the merge is not gated there.
 - One-call changes to gate inputs: un-drafting, removing a title marker, closing a halt issue, editing or deleting a Codex comment. The gate treats them as agent-writable inputs that can only remove a stop the owner set.
 - The gate checks the diff at merge time. It does not protect against code that runs before the merge, such as a workflow a pull request changes and runs.
 - Recorded from a 2026-11-24 review of 7d311ab..f4bbf2a and not fixed, because the inputs have not been seen in a real run:
