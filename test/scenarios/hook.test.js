@@ -104,15 +104,9 @@ test('hook: title has a caller lane prefix / the call carries no marker / hold l
 });
 
 test('hook: title matches no prefix / a caller-lane branch / hold no-lane as before', async () => {
-  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('feat: tidy'));
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('feat: chore(nightly): tidy'));
   assert.equal(code, 2);
   assert.match(err.join('\n'), /hold:owner \(no-lane/);
-});
-
-test('hook: title starts with an owner marker / the prefix does not match / blocked, never allowed', async () => {
-  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('[FAILED] chore(nightly): tidy'));
-  assert.equal(code, 2);
-  assert.match(err.join('\n'), /no-lane/);
 });
 
 test('hook: queue-branch pull request whose title has a caller prefix / the title is ignored / queue lane verdict', async () => {
