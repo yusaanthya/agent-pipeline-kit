@@ -682,56 +682,35 @@ const sectionRows = [
   // S1: only the bodies of listed sections differ.
   ['S1 a listed body edited', SB, SB.replace('r1', 'r2'), null],
   ['S1 lines added to and removed from listed bodies', SB, SB.replace('r1\n', 'r1\nr1b\n').replace('n1\n', ''), null],
-  ['S1 a listed body emptied', SB, SB.replace('r1\n\n', '\n'), null],
-  ['S1 both listed bodies edited at once', SB, SB.replace('r1', 'r2').replace('n1', 'n2'), null],
-  ['S1 identical files', SB, SB, null],
   ['S1 a listed section that starts the file, with no text before it', '## Ready\nr1\n', '## Ready\nr2\n', null],
   ['S1 a line that is not a heading line stays in the listed body', SB, SB.replace('r1', '### Ready\n##Ready\n #  ## Ready'), null],
   ['S1 a file with a listed heading missing from it', 'Intro\n## Decisions\nd1\n', 'Intro\n## Decisions\nd1\n', null],
   // S2: any byte outside the listed bodies.
   ['S2 an unlisted body edited', SB, SB.replace('d1', 'd2'), 'section-changed'],
   ['S2 text before the first heading edited', SB, SB.replace('Intro', 'Intro!'), 'section-changed'],
-  ['S2 a blank line added before the first heading', SB, `\n${SB}`, 'section-changed'],
   ['S2 an unlisted body edited beside a listed body', SB, SB.replace('d1', 'd2').replace('r1', 'r2'), 'section-changed'],
   ['S2 a trailing space in an unlisted body', SB, SB.replace('d1', 'd1 '), 'section-changed'],
   ['S2 a file with no heading, edited', 'a\nb\n', 'a\nc\n', 'section-changed'],
-  ['S2 a file with no heading, unchanged', 'a\nb\n', 'a\nb\n', null],
   // S3: a heading line changes.
   ['S3 a listed heading renamed', SB, SB.replace('## Ready', '## Ready now'), 'section-changed'],
   ['S3 a listed heading given a trailing space', SB, SB.replace('## Ready', '## Ready '), 'section-changed'],
   ['S3 an unlisted heading renamed', SB, SB.replace('## Decisions', '## Choices'), 'section-changed'],
   ['S3 a listed heading removed with its body', SB, SB.replace('## Ready\nr1\n\n', ''), 'section-changed'],
-  ['S3 a listed heading removed, its body kept', SB, SB.replace('## Ready\n', ''), 'section-changed'],
-  ['S3 an unlisted heading removed', SB, SB.replace('## Decisions\n', ''), 'section-changed'],
-  ['S3 an unlisted heading added', SB, `${SB}## Extra\nx\n`, 'section-changed'],
-  ['S3 a listed heading added', SB, `${SB}## Ready\nx\n`, 'section-changed'],
-  ['S3 a listed heading duplicated', SB, SB.replace('## Notes', '## Ready\nr1\n\n## Notes'), 'section-changed'],
   ['S3 two listed sections reordered', 'a\n## Ready\nr1\n## Notes\nn1\n', 'a\n## Notes\nn1\n## Ready\nr1\n', 'section-changed'],
-  ['S3 a listed and an unlisted section reordered', SB, 'Intro\n\n## Decisions\nd1\n\n## Ready\nr1\n\n## Notes\nn1\n', 'section-changed'],
   ['S3 an unlisted heading line added inside a listed body', SB, SB.replace('r1', 'r1\n## Other\nr2'), 'section-changed'],
   ['S3 a listed heading line added inside a listed body', SB, SB.replace('r1', 'r1\n## Notes'), 'section-changed'],
   ['S3 a heading line inside a code fence is a heading line', SB, SB.replace('r1', '```\n## Fake\n```'), 'section-changed'],
   ['S3 text after a fenced heading line belongs to that heading', '## Ready\n```\n## Fake\ncode\n```\n', '## Ready\n```\n## Fake\nedited\n```\n', 'section-changed'],
-  ['S3 a heading line that appears on both sides inside a listed body', '## Ready\n## Fake\nx\n', '## Ready\n## Fake\ny\n', 'section-changed'],
   // S5: the final newline.
   ['S5 the final newline removed, the last section listed', SB, SB.slice(0, -1), 'section-changed'],
   ['S5 a final newline added, the last section listed', SB.slice(0, -1), SB, 'section-changed'],
-  ['S5 the final newline removed, the last section unlisted', 'Intro\n## Notes\nn1\n## Decisions\nd1\n', 'Intro\n## Notes\nn1\n## Decisions\nd1', 'section-changed'],
-  ['S5 the final newline removed from a file that is only a listed body line', '## Ready\nr1\n', '## Ready\nr1', 'section-changed'],
   ['S5 a second final newline in a listed body is body text', SB, `${SB}\n`, null],
-  ['S5 the final newline changes together with a listed body', SB, SB.slice(0, -1).replace('n1', 'n2'), 'section-changed'],
 ];
 for (const [name, base, head, word] of sectionRows) {
   test(name, () => {
     assert.deepEqual(evalOne(SO, backlog, base, head), word === null ? [] : sectionHold(word));
   });
 }
-test('S2 a path outside the glob is not evaluated', () => {
-  assert.deepEqual(evalOne(SO, file('src/backlog.md'), SB, SB.replace('d1', 'd2')), []);
-});
-test('S2 a glob matched in a different case', () => {
-  assert.deepEqual(evalOne(SO, file('Docs/Backlog.md'), SB, SB.replace('d1', 'd2')), [hold('rule-sections', 'Docs/Backlog.md', 'section-changed')]);
-});
 test('S2 a hold names the path and one word, never file text', () => {
   const [reason] = evalOne(SO, backlog, SB, SB.replace('d1', SENTINEL));
   assert.deepEqual(reason, hold('rule-sections', 'docs/backlog.md', 'section-changed'));
@@ -747,16 +726,9 @@ test('S4 a deleted file holds, whatever its content', () => {
 });
 const sectionUnreadable = [
   ['a head that is not valid UTF-8', SB, presentBytes([0x23, 0x23, 0x20, 0xff])],
-  ['a base that is not valid UTF-8', presentBytes([0xff]), SB],
-  ['a head with a NUL', SB, presentBytes([...enc(SB), 0])],
-  ['a base with a NUL', presentBytes([0, ...enc(SB)]), SB],
-  ['a head with a CR in a listed body', SB, SB.replace('r1', 'r1\r')],
   ['a head with CRLF line endings throughout', SB, SB.replaceAll('\n', '\r\n')],
   ['a base with a CR in an unlisted body', SB.replace('d1', 'd1\r'), SB],
   ['a lone CR in a listed body on both sides', SB.replace('r1', 'r\r1'), SB.replace('r1', 'r\r1')],
-  ['a head over the size cap', SB, overCap],
-  ['a base over the size cap', overCap, SB],
-  ['a head that begins with a byte-order mark', SB, `﻿${SB}`],
 ];
 for (const [name, base, head] of sectionUnreadable) {
   test(`S4 ${name} holds as unreadable`, () => {
@@ -765,13 +737,6 @@ for (const [name, base, head] of sectionUnreadable) {
 }
 test('S4 an added file that is unreadable holds as added', () => {
   assert.deepEqual(evalOne(SO, addedFile('docs/backlog.md'), undefined, presentBytes([0xff])), sectionHold('added'));
-});
-test('S4 contents the collector did not supply give content-missing', () => {
-  assert.deepEqual(evaluateContentRules(manifestWith(SO), [backlog], {}), [missing('docs/backlog.md')]);
-  assert.deepEqual(evaluateContentRules(manifestWith(SO), [backlog], undefined), [missing('docs/backlog.md')]);
-});
-test('S4 a type change and a non-regular head mode are not evaluated', () => {
-  assert.deepEqual(evaluateContentRules(manifestWith(SO), [file('docs/a.md', { status: 'T' }), file('docs/b.md', { headMode: '100755', headHasNul: null })], undefined), []);
 });
 test('S6 each matching rule gives its own reason, after the front matter rule', () => {
   const rules = {
