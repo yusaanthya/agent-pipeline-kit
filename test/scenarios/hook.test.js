@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { SHAS } from '../support/fake-world.js';
-import { hook, mergeCall, REPO } from '../support/scenario.js';
+import { gate, hook, mergeCall, REPO, trustManifestKey } from '../support/scenario.js';
 
 test('hook: merge call matches the merge verdict / head, method and marker line agree / allowed', async () => {
   const { code, err } = await hook(mergeCall());
@@ -54,4 +54,72 @@ test('example settings: every gate hook blocks on failure / the auto-merge and w
     assert.ok(settings.permissions.deny.includes(`mcp__github__${tool}`), tool);
   }
   assert.ok(settings.permissions.deny.includes('Bash(gh pr merge:*)'));
+});
+
+// Caller lanes selected by the pull request title prefix.
+const callerLane = (prefix, marker) => ({
+  kind: 'caller', base: 'main', auto_merge: true, tier: { default: 'hold', auto: ['src/**'], strong_review: [] },
+  max_changed_lines: null, marker, title_prefix: prefix,
+});
+const prefixManifest = JSON.stringify({
+  schema: 1, kit: 'a'.repeat(40), checks: ['check'], codex_clean: 'no_blocking', hold_paths: [],
+  lanes: {
+    runner: { kind: 'queue', base: 'main', auto_merge: true, tier: { default: 'auto', strong_review: [] }, max_changed_lines: null, marker: 'Auto-Merged-By: test-runner' },
+    nightly: callerLane('chore(nightly): ', 'Auto-Merged-By: test-nightly'),
+    weekly: callerLane('chore(weekly): ', 'Auto-Merged-By: test-weekly'),
+  },
+});
+const callerWorld = (title, headRef = 'routine/tidy') => ({
+  pr: { title, head: { sha: SHAS.HEAD, ref: headRef, repo: { full_name: 'owner/repo' } } },
+  blobs: { [trustManifestKey]: prefixManifest },
+  diffRaw: `:100644 100644 ${SHAS.S_OLD} ${SHAS.S_NEW} M\0src/x.go\0`,
+  numstat: '3\t1\tsrc/x.go\0',
+});
+const nightlyCall = (message) => mergeCall({ commit_message: message });
+
+test('hook: title has a caller lane prefix / the call carries that lane marker / passes to the normal verdict', async () => {
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('chore(nightly): tidy'));
+  assert.equal(code, 0);
+  assert.deepEqual(err, []);
+});
+
+test('hook: title has a caller lane prefix / the call carries another lane marker / hold lane-marker-mismatch', async () => {
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-weekly'), callerWorld('chore(nightly): tidy'));
+  assert.equal(code, 2);
+  assert.match(err.join('\n'), /hold:owner \(lane-marker-mismatch/);
+});
+
+test('hook: title has a caller lane prefix / the call carries no marker / hold lane-marker-mismatch', async () => {
+  for (const message of ['Tidy.', undefined]) {
+    const { code, err } = await hook(nightlyCall(message), callerWorld('chore(nightly): tidy'));
+    assert.equal(code, 2);
+    assert.match(err.join('\n'), /hold:owner \(lane-marker-mismatch/);
+  }
+});
+
+test('hook: title matches no prefix / a caller-lane branch / hold no-lane as before', async () => {
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('feat: tidy'));
+  assert.equal(code, 2);
+  assert.match(err.join('\n'), /hold:owner \(no-lane/);
+});
+
+test('hook: title starts with an owner marker / the prefix does not match / blocked, never allowed', async () => {
+  const { code, err } = await hook(nightlyCall('Tidy.\n\nAuto-Merged-By: test-nightly'), callerWorld('[FAILED] chore(nightly): tidy'));
+  assert.equal(code, 2);
+  assert.match(err.join('\n'), /no-lane/);
+});
+
+test('hook: queue-branch pull request whose title has a caller prefix / the title is ignored / queue lane verdict', async () => {
+  const over = { pr: { title: 'chore(nightly): tidy' }, blobs: { [trustManifestKey]: prefixManifest } };
+  const ok = await hook(mergeCall(), over);
+  assert.equal(ok.code, 0);
+  const wrong = await hook(nightlyCall('Auto-Merged-By: test-nightly'), over);
+  assert.equal(wrong.code, 2);
+  assert.match(wrong.err.join('\n'), /commit_message must contain the line: Auto-Merged-By: test-runner/);
+});
+
+test('evaluate: caller-lane pull request with a matching title prefix / no --lane / the title does not select a lane', async () => {
+  const { result } = await gate(callerWorld('chore(nightly): tidy'));
+  assert.equal(result.lane, null);
+  assert.ok(result.reasons.some((r) => r.code === 'no-lane'));
 });

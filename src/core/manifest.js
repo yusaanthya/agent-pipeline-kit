@@ -101,7 +101,7 @@ function checkLane(name, lane, errors) {
     errors.push(`${where}: must be an object`);
     return;
   }
-  checkKeys(lane, ['kind', 'base', 'auto_merge', 'tier', 'max_changed_lines', 'marker'], ['freeze_while_open'], where, errors);
+  checkKeys(lane, ['kind', 'base', 'auto_merge', 'tier', 'max_changed_lines', 'marker'], ['freeze_while_open', 'title_prefix'], where, errors);
   if (Object.hasOwn(lane, 'kind') && lane.kind !== 'queue' && lane.kind !== 'caller') {
     errors.push(`${where}.kind: must be "queue" or "caller"`);
   }
@@ -149,6 +149,13 @@ function checkLane(name, lane, errors) {
           if (error) errors.push(`${where}.freeze_while_open.${key}: ${error}`);
         }
       }
+    }
+  }
+  if (Object.hasOwn(lane, 'title_prefix')) {
+    const prefix = lane.title_prefix;
+    if (lane.kind !== 'caller') errors.push(`${where}.title_prefix: allowed only on a caller lane`);
+    if (typeof prefix !== 'string' || prefix === '' || /[\r\n]/.test(prefix)) {
+      errors.push(`${where}.title_prefix: must be a non-empty one-line string`);
     }
   }
   if (Object.hasOwn(lane, 'marker')) {
@@ -206,6 +213,17 @@ export function parseManifest(text) {
         checkLane(name, lane, errors);
       }
       if (queueLanes > 1) errors.push('lanes: at most one lane may have kind "queue"');
+      // At most one lane can match a title: no prefix may start with another.
+      const prefixed = Object.entries(lanes)
+        .filter(([, lane]) => isObject(lane) && typeof lane.title_prefix === 'string' && lane.title_prefix !== '');
+      for (let i = 0; i < prefixed.length; i += 1) {
+        for (let j = i + 1; j < prefixed.length; j += 1) {
+          const [a, b] = [prefixed[i], prefixed[j]];
+          if (a[1].title_prefix.startsWith(b[1].title_prefix) || b[1].title_prefix.startsWith(a[1].title_prefix)) {
+            errors.push(`lanes: title_prefix of "${a[0]}" and "${b[0]}" overlap`);
+          }
+        }
+      }
     }
   }
   if (errors.length > 0) return { ok: false, code: 'manifest-invalid', errors };
