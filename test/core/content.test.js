@@ -688,6 +688,7 @@ const sectionRows = [
   // S2: any byte outside the listed bodies.
   ['S2 an unlisted body edited', SB, SB.replace('d1', 'd2'), 'section-changed'],
   ['S2 text before the first heading edited', SB, SB.replace('Intro', 'Intro!'), 'section-changed'],
+  ['S2 a blank line added before the first heading', SB, `\n${SB}`, 'section-changed'],
   ['S2 an unlisted body edited beside a listed body', SB, SB.replace('d1', 'd2').replace('r1', 'r2'), 'section-changed'],
   ['S2 a trailing space in an unlisted body', SB, SB.replace('d1', 'd1 '), 'section-changed'],
   ['S2 a file with no heading, edited', 'a\nb\n', 'a\nc\n', 'section-changed'],
@@ -696,6 +697,7 @@ const sectionRows = [
   ['S3 a listed heading given a trailing space', SB, SB.replace('## Ready', '## Ready '), 'section-changed'],
   ['S3 an unlisted heading renamed', SB, SB.replace('## Decisions', '## Choices'), 'section-changed'],
   ['S3 a listed heading removed with its body', SB, SB.replace('## Ready\nr1\n\n', ''), 'section-changed'],
+  ['S3 a listed heading duplicated', SB, SB.replace('## Notes', '## Ready\nr1\n\n## Notes'), 'section-changed'],
   ['S3 two listed sections reordered', 'a\n## Ready\nr1\n## Notes\nn1\n', 'a\n## Notes\nn1\n## Ready\nr1\n', 'section-changed'],
   ['S3 an unlisted heading line added inside a listed body', SB, SB.replace('r1', 'r1\n## Other\nr2'), 'section-changed'],
   ['S3 a listed heading line added inside a listed body', SB, SB.replace('r1', 'r1\n## Notes'), 'section-changed'],
