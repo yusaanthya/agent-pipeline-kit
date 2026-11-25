@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../src/cli.js';
-import { baseline, codexSummary, checkRun } from './support/baseline.js';
+import { baseline, BOT, SHA, codexSummary, checkRun, editManifest } from './support/baseline.js';
 
 const KIT = '7'.repeat(40);
 
@@ -298,4 +298,26 @@ test('cli backtest: a replay that merges with a limit keeps its limits', async (
   });
   await main(btArgs, h.io);
   assert.deepEqual(JSON.parse(h.out[0]).limits, ['halt-label-timing', 'codex-edited-after-merge']);
+});
+
+test('cli replay: review requests after asOf / cap 2 with one request before and one after / the later one does not count', async () => {
+  const request = (id, created_at) => ({ id, user: { id: 5, login: 'owner' }, body: '@codex review', created_at });
+  const finding = { id: 10, user: BOT, body: '**[P1] Fix this**', commit_id: SHA, original_commit_id: SHA, created_at: '2026-11-10T10:01:00Z', updated_at: '2026-11-10T10:01:00Z' };
+  const input = (second) => {
+    const i = replayInput();
+    editManifest(i, (m) => { m.lanes.runner.max_review_requests = 2; });
+    i.codex = {
+      comments: [codexSummary({ has_any_findings: true, has_unresolved_findings: true }), request(2, '2026-11-10T09:00:00Z'), second],
+      reviewComments: [finding],
+      reviews: [],
+    };
+    return i;
+  };
+  const codes = async (second) => {
+    const h = makeIo({ collect: async () => input(second) });
+    await main(replayArgs, h.io);
+    return JSON.parse(h.out[0]).reasons.map((r) => r.code);
+  };
+  assert.deepEqual(await codes(request(3, '2026-11-10T13:00:00Z')), ['p0-p1']);
+  assert.deepEqual(await codes(request(3, 'not a time')), ['review-cap', 'p0-p1']);
 });
