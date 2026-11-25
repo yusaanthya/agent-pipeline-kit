@@ -34,6 +34,7 @@ import { readCodexState, codexReason } from './codex.js';
  *           live: the open issues carrying HALT_LABEL; replay: those carrying it now, any state
  * @property {{number: number, headRef: string, headRepo: string, baseRef: string, createdAt: string, closedAt: string|null}[]} pulls
  *           live: open pull requests; replay: candidates for the freeze, any state
+ * @property {string|null} [firstParentLog] output of `git log --first-parent --format=%B <merge base>..<head>`; read only when a lane sets max_fix_rounds; missing means no count
  * @property {string|null} mergeMessage    replay only: the merge commit's message; null for live
  * @property {string|null} [mergeCommit]   replay only: the merge commit's SHA, for the CLI output; the core does not read it
  * @property {string[]} limits             facts the collector could not establish as of asOf
@@ -359,11 +360,17 @@ export function evaluate(input) {
     add('hold:owner', 'title-marker');
   }
 
-  // Review-request cap. It only adds a hold when `fix:codex` wins the whole uncapped evaluation.
-  if (lane !== null && typeof lane.max_review_requests === 'number' && sortReasons(reasons)[0]?.verdict === 'fix:codex') {
+  // Caps. Each only adds a hold, judged on the winner of the whole uncapped evaluation.
+  const winner = sortReasons(reasons)[0]?.verdict;
+  if (lane !== null && typeof lane.max_review_requests === 'number' && winner === 'fix:codex') {
     const requests = (input.codex.comments ?? []).filter((c) => typeof c.body === 'string' && c.body.trim() === '@codex review' &&
       (!replay || !(Date.parse(c.created_at) > tMs))).length;
     if (requests >= lane.max_review_requests) add('hold:owner', 'review-cap', `${requests} >= ${lane.max_review_requests}`);
+  }
+  if (lane !== null && typeof lane.max_fix_rounds === 'number' && typeof input.firstParentLog === 'string' &&
+      (winner === 'fix:ci' || winner === 'fix:codex')) {
+    const fixRounds = input.firstParentLog.split('\n').filter((line) => line.startsWith('Review-fix-round:')).length;
+    if (fixRounds >= lane.max_fix_rounds) add('hold:owner', 'fix-round-cap', `${fixRounds} >= ${lane.max_fix_rounds}`);
   }
 
   return finish(laneName, manifest, codexState);

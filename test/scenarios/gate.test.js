@@ -192,3 +192,90 @@ test('max_review_requests / zero, negative, fractional or string / blocked:manif
   }
   for (const good of [null, 5]) assert.equal((await gate(capped(good))).result.verdict, 'merge');
 });
+
+// The fix-round cap: lines beginning with `Review-fix-round:` in the first-parent log.
+const fixManifest = (extra) => JSON.stringify({
+  schema: 1, kit: 'a'.repeat(40), checks: ['check'], codex_clean: 'no_blocking', hold_paths: [],
+  lanes: { runner: { kind: 'queue', base: 'main', auto_merge: true, tier: { default: 'auto', strong_review: [] }, max_changed_lines: null, marker: 'Auto-Merged-By: test-runner', ...extra } },
+});
+const rounds = (n) => Array.from({ length: n }, (_, i) => `fix: round ${i + 1}\n\nReview-fix-round: ${i + 1}\n\n`).join('');
+const checkRuns = (run) => ({ [`/repos/${REPO}/commits/${SHAS.HEAD}/check-runs?filter=all`]: { check_runs: [{ id: 1, name: 'check', app: { slug: 'github-actions' }, ...run }] } });
+const checkFailed = checkRuns({ status: 'completed', conclusion: 'failure' });
+const fixed = (cap, n, rest, extra = {}) => ({ blobs: { [trustManifestKey]: fixManifest({ max_fix_rounds: cap, ...extra }) }, firstParentLog: rounds(n), rest });
+
+test('fix-round cap reached / the required check failed and Codex is clean / hold:owner with fix-round-cap', async () => {
+  const { code, result } = await gate(fixed(3, 3, checkFailed));
+  assert.equal(result.verdict, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(codes(result), ['fix-round-cap', 'check-failed']);
+  assert.equal(result.reasons[0].detail, '3 >= 3');
+  assert.equal(result.merge, null);
+});
+
+test('fix-round cap reached / checks pass and Codex has a P1 finding / hold:owner with fix-round-cap', async () => {
+  const { code, result } = await gate(fixed(3, 3, withP1([])));
+  assert.equal(result.verdict, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(codes(result), ['fix-round-cap', 'p0-p1']);
+});
+
+test('fix-round cap not reached / the check failed, then Codex has a P1 finding / fix:ci, then fix:codex', async () => {
+  const failed = await gate(fixed(3, 2, checkFailed));
+  assert.equal(failed.result.verdict, 'fix:ci');
+  assert.deepEqual(codes(failed.result), ['check-failed']);
+  const flagged = await gate(fixed(3, 2, withP1([])));
+  assert.equal(flagged.result.verdict, 'fix:codex');
+  assert.deepEqual(codes(flagged.result), ['p0-p1']);
+  assert.equal(flagged.code, 1);
+});
+
+test('fix-round cap reached / the review is clean and checks pass / merge without fix-round-cap', async () => {
+  const { code, result } = await gate(fixed(3, 4));
+  assert.equal(result.verdict, 'merge');
+  assert.equal(code, 0);
+  assert.deepEqual(result.reasons, []);
+});
+
+for (const [label, over, verdict, reason] of [
+  ['the required check is still running', { rest: checkRuns({ status: 'in_progress', conclusion: null }) }, 'wait:ci', 'check-running'],
+  ['the base is not an ancestor of the head', { ancestor: { [SHAS.BASE]: 1 } }, 'update:base', 'base-not-ancestor'],
+]) {
+  test(`fix-round cap reached / ${label} / ${verdict} without fix-round-cap`, async () => {
+    const { code, result } = await gate({ ...fixed(3, 3), ...over });
+    assert.equal(result.verdict, verdict);
+    assert.equal(code, 1);
+    assert.ok(result.reasons.some((r) => r.code === reason));
+    assert.ok(!result.reasons.some((r) => r.code === 'fix-round-cap'));
+  });
+}
+
+test('both caps reached / Codex has a P1 finding / review-cap and fix-round-cap together', async () => {
+  const { code, result } = await gate(fixed(2, 2, withP1(requests(2)), { max_review_requests: 2 }));
+  assert.equal(result.verdict, 'hold:owner');
+  assert.equal(code, 1);
+  assert.deepEqual(codes(result), ['review-cap', 'fix-round-cap', 'p0-p1']);
+});
+
+test('fix-round cap set / the first-parent log cannot be read / blocked:input collect-failed', async () => {
+  const { code, result } = await gate({ ...fixed(3, 0), firstParentLogCode: 128 });
+  assert.equal(result.verdict, 'blocked:input');
+  assert.equal(code, 1);
+  assert.deepEqual(codes(result), ['collect-failed']);
+});
+
+test('max_fix_rounds / zero, negative, fractional or string / blocked:manifest; a positive integer or null is accepted', async () => {
+  for (const bad of [0, -1, 1.5, '3']) {
+    const { code, result } = await gate({ blobs: { [trustManifestKey]: fixManifest({ max_fix_rounds: bad }) } });
+    assert.equal(result.verdict, 'blocked:manifest', JSON.stringify(bad));
+    assert.equal(code, 1);
+    assert.deepEqual(codes(result), ['manifest-invalid']);
+  }
+  for (const good of [null, 3]) assert.equal((await gate(fixed(good, 0))).result.verdict, 'merge');
+});
+
+test('no max_fix_rounds in the manifest / the first-parent log would fail / the log is not read and the verdict is merge', async () => {
+  const { code, result, world } = await gate({ firstParentLogCode: 128 });
+  assert.equal(result.verdict, 'merge');
+  assert.equal(code, 0);
+  assert.ok(!world.calls.some((c) => c.args.includes('--first-parent') && c.args.includes('log')));
+});

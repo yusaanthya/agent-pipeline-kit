@@ -75,6 +75,9 @@ export function makeGit(run, repoDir) {
     async message(commit) {
       return (await ok(['log', '-1', '--format=%B', commit])).stdout.toString('utf8');
     },
+    async firstParentLog(mergeBase, head) {
+      return (await ok(['log', '--first-parent', '--format=%B', `${mergeBase}..${head}`])).stdout.toString('utf8');
+    },
     async deleteRef(ref) {
       try {
         await exec(['update-ref', '-d', ref]);

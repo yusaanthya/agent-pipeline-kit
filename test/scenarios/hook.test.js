@@ -145,3 +145,22 @@ test('hook: review cap reached / the merge call is made with a clean or a P1 Cod
   assert.equal(blocked.code, 2);
   assert.match(blocked.err.join('\n'), /hold:owner \(review-cap: 2 >= 2\)/);
 });
+
+test('hook: fix-round cap reached / the call is made with a clean review, a failed check or an unreadable log / allowed, blocked, blocked', async () => {
+  const manifest = JSON.stringify({
+    schema: 1, kit: 'a'.repeat(40), checks: ['check'], codex_clean: 'no_blocking', hold_paths: [],
+    lanes: { runner: { kind: 'queue', base: 'main', auto_merge: true, tier: { default: 'auto', strong_review: [] }, max_changed_lines: null, marker: 'Auto-Merged-By: test-runner', max_fix_rounds: 2 } },
+  });
+  const firstParentLog = 'fix: a\n\nReview-fix-round: 1\n\nfix: b\n\nReview-fix-round: 2\n';
+  const base = { blobs: { [trustManifestKey]: manifest }, firstParentLog };
+  const allowed = await hook(mergeCall(), base);
+  assert.equal(allowed.code, 0);
+  assert.deepEqual(allowed.err, []);
+  const failed = { id: 1, name: 'check', app: { slug: 'github-actions' }, status: 'completed', conclusion: 'failure' };
+  const capped = await hook(mergeCall(), { ...base, rest: { [`/repos/${REPO}/commits/${SHAS.HEAD}/check-runs?filter=all`]: { check_runs: [failed] } } });
+  assert.equal(capped.code, 2);
+  assert.match(capped.err.join('\n'), /hold:owner \(fix-round-cap: 2 >= 2\)/);
+  const unreadable = await hook(mergeCall(), { ...base, firstParentLogCode: 128 });
+  assert.equal(unreadable.code, 2);
+  assert.match(unreadable.err.join('\n'), /collect-failed/);
+});

@@ -123,7 +123,10 @@ export function makeWorld(over = {}) {
         if (a[1] === '-s') return blobs[a[2]] !== undefined ? reply(`${Buffer.byteLength(blobs[a[2]])}\n`) : reply('', 128, 'fatal: not a valid object name');
         return blobs[a[2]] !== undefined ? reply(blobs[a[2]]) : reply('', 128);
       }
-      case 'log': return reply(log);
+      case 'log':
+        // The first-parent log of fix rounds has its own reply, which a scenario can make fail.
+        if (a.includes('--first-parent')) return reply(over.firstParentLog ?? '', over.firstParentLogCode ?? 0, over.firstParentLogCode ? 'fatal: bad revision' : '');
+        return reply(log);
       case 'rev-list': return reply(over.revList ?? `${TRUST}\n`);
       case 'update-ref': return reply();
       default: throw new Error(`unexpected git command ${a.join(' ')}`);
