@@ -167,6 +167,22 @@ test('review cap reached / Codex review is clean but the required check failed /
   assert.deepEqual(codes(result), ['check-failed']);
 });
 
+for (const [label, run, verdict, code] of [
+  ['failed', { status: 'completed', conclusion: 'failure' }, 'fix:ci', 'check-failed'],
+  ['still running', { status: 'in_progress', conclusion: null }, 'wait:ci', 'check-running'],
+]) {
+  test(`review cap reached / Codex has a P1 finding and the required check ${label} / ${verdict} without review-cap`, async () => {
+    const { code: exit, result } = await gate(capped(2, {
+      ...withP1(requests(3)),
+      [`/repos/${REPO}/commits/${SHAS.HEAD}/check-runs?filter=all`]: { check_runs: [{ id: 1, name: 'check', app: { slug: 'github-actions' }, ...run }] },
+    }));
+    assert.equal(result.verdict, verdict);
+    assert.equal(exit, 1);
+    assert.ok(result.reasons.some((r) => r.code === code));
+    assert.ok(!result.reasons.some((r) => r.code === 'review-cap'));
+  });
+}
+
 test('max_review_requests / zero, negative, fractional or string / blocked:manifest; a positive integer or null is accepted', async () => {
   for (const bad of [0, -1, 1.5, '5']) {
     const { code, result } = await gate(capped(bad));
