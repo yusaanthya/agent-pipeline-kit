@@ -2,8 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { BOT, codexSummary } from '../support/baseline.js';
 import { SHAS } from '../support/fake-world.js';
-import { gate, hook, mergeCall, REPO, trustManifestKey } from '../support/scenario.js';
+import { codexCleanOn, gate, hook, mergeCall, REPO, trustManifestKey } from '../support/scenario.js';
 
 test('hook: merge call matches the merge verdict / head, method and marker line agree / allowed', async () => {
   const { code, err } = await hook(mergeCall());
@@ -122,4 +123,25 @@ test('evaluate: caller-lane pull request with a matching title prefix / no --lan
   const { result } = await gate(callerWorld('chore(nightly): tidy'));
   assert.equal(result.lane, null);
   assert.ok(result.reasons.some((r) => r.code === 'no-lane'));
+});
+
+test('hook: review cap reached / the merge call is made with a clean or a P1 Codex review / decision unchanged', async () => {
+  const manifest = JSON.stringify({
+    schema: 1, kit: 'a'.repeat(40), checks: ['check'], codex_clean: 'no_blocking', hold_paths: [],
+    lanes: { runner: { kind: 'queue', base: 'main', auto_merge: true, tier: { default: 'auto', strong_review: [] }, max_changed_lines: null, marker: 'Auto-Merged-By: test-runner', max_review_requests: 2 } },
+  });
+  const request = (id) => ({ id, user: { id: 1000 + id, login: 'owner' }, body: '@codex review', created_at: '2026-11-10T09:00:00Z' });
+  const clean = codexCleanOn()[`/repos/${REPO}/issues/7/comments`];
+  const finding = { id: 10, user: BOT, body: '**[P1] Fix this**', commit_id: SHAS.HEAD, original_commit_id: SHAS.HEAD, created_at: '2026-11-10T10:01:00Z' };
+  const blobs = { [trustManifestKey]: manifest };
+  const allowed = await hook(mergeCall(), { blobs, rest: { [`/repos/${REPO}/issues/7/comments`]: [...clean, request(1), request(2), request(3)] } });
+  assert.equal(allowed.code, 0);
+  assert.deepEqual(allowed.err, []);
+  const flagged = codexSummary({ commit_sha: SHAS.HEAD, has_any_findings: true, has_unresolved_findings: true });
+  const blocked = await hook(mergeCall(), {
+    blobs,
+    rest: { [`/repos/${REPO}/issues/7/comments`]: [flagged, request(1), request(2)], [`/repos/${REPO}/pulls/7/comments`]: [finding] },
+  });
+  assert.equal(blocked.code, 2);
+  assert.match(blocked.err.join('\n'), /hold:owner \(review-cap: 2 >= 2\)/);
 });

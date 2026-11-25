@@ -345,7 +345,6 @@ export function evaluate(input) {
   if (codexState.editedAfterAsOf) limits.push('codex-edited-after-merge');
   const codex = codexReason(codexState, manifest.codex_clean);
   if (codex !== null) add(codex.verdict, codex.code, codex.detail);
-
   // Ancestry and mergeability.
   if (!input.baseIsAncestor) add('update:base', 'base-not-ancestor');
   if (!replay) {
@@ -358,6 +357,13 @@ export function evaluate(input) {
   const title = typeof pr.title === 'string' ? pr.title.toLowerCase() : null;
   if (title === null || title.includes('[failed]') || title.includes('[needs-decision]')) {
     add('hold:owner', 'title-marker');
+  }
+
+  // Review-request cap. It only adds a hold when `fix:codex` wins the whole uncapped evaluation.
+  if (lane !== null && typeof lane.max_review_requests === 'number' && sortReasons(reasons)[0]?.verdict === 'fix:codex') {
+    const requests = (input.codex.comments ?? []).filter((c) => typeof c.body === 'string' && c.body.trim() === '@codex review' &&
+      (!replay || !(Date.parse(c.created_at) > tMs))).length;
+    if (requests >= lane.max_review_requests) add('hold:owner', 'review-cap', `${requests} >= ${lane.max_review_requests}`);
   }
 
   return finish(laneName, manifest, codexState);

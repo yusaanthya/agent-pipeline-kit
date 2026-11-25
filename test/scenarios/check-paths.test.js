@@ -202,3 +202,13 @@ test('sections_only / a path the rule does not match / no blob is needed and the
   assert.equal(result.result, 'clear');
   assert.equal(code, 0);
 });
+
+test('max_review_requests / zero, negative, fractional or string on a lane / blocked:manifest', async () => {
+  for (const bad of [0, -1, 1.5, '5']) {
+    const bounded = JSON.stringify({ ...JSON.parse(manifest), lanes: { nightly: { ...JSON.parse(manifest).lanes.nightly, max_review_requests: bad } } });
+    const { code, result } = await checkPaths({ ...world(['src/x.go']), blobs: { [trustManifestKey]: bounded } }, ['--lane', 'nightly']);
+    assert.equal(result.result, 'blocked:manifest', JSON.stringify(bad));
+    assert.equal(code, 1);
+    assert.deepEqual(codes(result), ['manifest-invalid']);
+  }
+});
