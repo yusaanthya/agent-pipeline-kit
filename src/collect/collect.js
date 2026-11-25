@@ -175,8 +175,12 @@ async function gather({ repo, prNumber, callerLane, titleLane, replay, manifestF
   // 6. Changed files and the contents for the content rules.
   const { files, contents } = await readChanges(git, mergeBase, headSha, manifestText);
 
-  // 7. Queue item at the base tip.
+  // 7. Queue item at the base tip. The first-parent log is read only when a lane sets a fix-round cap.
   const input = {};
+  const parsedManifest = parseManifest(manifestText);
+  if (parsedManifest.ok && Object.values(parsedManifest.manifest.lanes).some((lane) => typeof lane.max_fix_rounds === 'number')) {
+    input.firstParentLog = await git.firstParentLog(mergeBase, headSha);
+  }
   const queue = QUEUE_BRANCH.exec(headRef);
   if (queue) input.queueItemText = await git.textAt(baseSha, `${QUEUE_DIR}/${queue[1]}.md`);
 

@@ -101,7 +101,7 @@ function checkLane(name, lane, errors) {
     errors.push(`${where}: must be an object`);
     return;
   }
-  checkKeys(lane, ['kind', 'base', 'auto_merge', 'tier', 'max_changed_lines', 'marker'], ['freeze_while_open', 'title_prefix', 'max_review_requests'], where, errors);
+  checkKeys(lane, ['kind', 'base', 'auto_merge', 'tier', 'max_changed_lines', 'marker'], ['freeze_while_open', 'title_prefix', 'max_review_requests', 'max_fix_rounds'], where, errors);
   if (Object.hasOwn(lane, 'kind') && lane.kind !== 'queue' && lane.kind !== 'caller') {
     errors.push(`${where}.kind: must be "queue" or "caller"`);
   }
@@ -141,6 +141,12 @@ function checkLane(name, lane, errors) {
     const n = lane.max_review_requests;
     if (n !== null && !(Number.isSafeInteger(n) && n > 0)) {
       errors.push(`${where}.max_review_requests: must be a positive integer or null`);
+    }
+  }
+  if (Object.hasOwn(lane, 'max_fix_rounds')) {
+    const n = lane.max_fix_rounds;
+    if (n !== null && !(Number.isSafeInteger(n) && n > 0)) {
+      errors.push(`${where}.max_fix_rounds: must be a positive integer or null`);
     }
   }
   if (Object.hasOwn(lane, 'freeze_while_open')) {

@@ -212,3 +212,21 @@ test('max_review_requests / zero, negative, fractional or string on a lane / blo
     assert.deepEqual(codes(result), ['manifest-invalid']);
   }
 });
+
+test('max_fix_rounds / zero, negative, fractional or string on a lane / blocked:manifest', async () => {
+  for (const bad of [0, -1, 1.5, '3']) {
+    const bounded = JSON.stringify({ ...JSON.parse(manifest), lanes: { nightly: { ...JSON.parse(manifest).lanes.nightly, max_fix_rounds: bad } } });
+    const { code, result } = await checkPaths({ ...world(['src/x.go']), blobs: { [trustManifestKey]: bounded } }, ['--lane', 'nightly']);
+    assert.equal(result.result, 'blocked:manifest', JSON.stringify(bad));
+    assert.equal(code, 1);
+    assert.deepEqual(codes(result), ['manifest-invalid']);
+  }
+});
+
+test('max_fix_rounds set / the first-parent log would fail / check-paths reads no log and is clear', async () => {
+  const bounded = JSON.stringify({ ...JSON.parse(manifest), lanes: { nightly: { ...JSON.parse(manifest).lanes.nightly, max_fix_rounds: 3 } } });
+  const { code, result, world: used } = await checkPaths({ ...world(['src/x.go']), blobs: { [trustManifestKey]: bounded }, firstParentLogCode: 128 }, ['--lane', 'nightly']);
+  assert.equal(result.result, 'clear');
+  assert.equal(code, 0);
+  assert.ok(!used.calls.some((c) => c.args.includes('log')));
+});
